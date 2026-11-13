@@ -1,0 +1,197 @@
+-- 0002_transactions.sql
+-- Income, expense, ledger (ทะเบียนคุม), workflow events, audit, attachments, bank.
+--
+-- Status vocabulary (same as the prototype, plus 'cancelled' from the blueprint):
+--   income : draft -> (submitted) -> posted -> reversed      | rejected | cancelled
+--   expense: draft -> submitted -> reviewed -> approved -> paid -> reversed | rejected | cancelled
+-- Only 'posted' (income) and 'paid' (expense) move real money. 'approved' is a commitment only.
+-- The transition rules themselves are enforced by triggers in 0003.
+
+CREATE TABLE income_transactions (
+  id                   TEXT PRIMARY KEY,
+  fiscal_year_id       TEXT NOT NULL REFERENCES fiscal_years(id),
+  fund_source_id       TEXT NOT NULL REFERENCES fund_sources(id),
+  receipt_number       TEXT,
+  transaction_date     TEXT NOT NULL CHECK (transaction_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+  payer_name           TEXT NOT NULL CHECK (length(trim(payer_name)) > 0),
+  description          TEXT NOT NULL CHECK (length(trim(description)) > 0),
+  amount_satang        INTEGER NOT NULL CHECK (typeof(amount_satang) = 'integer' AND amount_satang > 0),
+  payment_method       TEXT NOT NULL CHECK (length(trim(payment_method)) > 0),
+  status               TEXT NOT NULL DEFAULT 'draft'
+                       CHECK (status IN ('draft', 'submitted', 'posted', 'rejected', 'cancelled', 'reversed')),
+  created_by           TEXT NOT NULL REFERENCES users(id),
+  created_at           TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  updated_by           TEXT REFERENCES users(id),
+  updated_at           TEXT,
+  version              INTEGER NOT NULL DEFAULT 1,
+  submitted_at         TEXT,
+  posted_by            TEXT REFERENCES users(id),
+  posted_at            TEXT,
+  post_idempotency_key TEXT UNIQUE,
+  rejected_by          TEXT REFERENCES users(id),
+  rejected_at          TEXT,
+  rejection_reason     TEXT,
+  reversed_by          TEXT REFERENCES users(id),
+  reversed_at          TEXT,
+  reversal_reason      TEXT,
+  reversal_idempotency_key TEXT UNIQUE,
+  CONSTRAINT ck_inc_posted_fields CHECK (
+    status NOT IN ('posted', 'reversed')
+    OR (receipt_number IS NOT NULL AND posted_by IS NOT NULL AND posted_at IS NOT NULL AND post_idempotency_key IS NOT NULL)),
+  CONSTRAINT ck_inc_reversed_fields CHECK (
+    status <> 'reversed'
+    OR (reversed_by IS NOT NULL AND reversed_at IS NOT NULL AND reversal_idempotency_key IS NOT NULL
+        AND length(trim(coalesce(reversal_reason, ''))) > 0)),
+  CONSTRAINT ck_inc_rejected_reason CHECK (
+    status <> 'rejected' OR length(trim(coalesce(rejection_reason, ''))) > 0),
+  -- separation of duties: the person who confirms the receipt is not the person who prepared it
+  CONSTRAINT ck_inc_sod_post CHECK (posted_by IS NULL OR posted_by <> created_by)
+);
+CREATE UNIQUE INDEX ux_income_receipt ON income_transactions (fiscal_year_id, receipt_number)
+  WHERE receipt_number IS NOT NULL;
+
+CREATE TABLE expense_transactions (
+  id                   TEXT PRIMARY KEY,
+  fiscal_year_id       TEXT NOT NULL REFERENCES fiscal_years(id),
+  fund_source_id       TEXT NOT NULL REFERENCES fund_sources(id),
+  project_id           TEXT REFERENCES projects(id),
+  voucher_number       TEXT,
+  transaction_date     TEXT NOT NULL CHECK (transaction_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+  payee_name           TEXT NOT NULL CHECK (length(trim(payee_name)) > 0),
+  description          TEXT NOT NULL CHECK (length(trim(description)) > 0),
+  amount_satang        INTEGER NOT NULL CHECK (typeof(amount_satang) = 'integer' AND amount_satang > 0),
+  payment_method       TEXT NOT NULL CHECK (length(trim(payment_method)) > 0),
+  status               TEXT NOT NULL DEFAULT 'draft'
+                       CHECK (status IN ('draft', 'submitted', 'reviewed', 'approved', 'paid', 'rejected', 'cancelled', 'reversed')),
+  created_by           TEXT NOT NULL REFERENCES users(id),
+  created_at           TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  updated_by           TEXT REFERENCES users(id),
+  updated_at           TEXT,
+  version              INTEGER NOT NULL DEFAULT 1,
+  submitted_at         TEXT,
+  reviewed_by          TEXT REFERENCES users(id),
+  reviewed_at          TEXT,
+  approved_by          TEXT REFERENCES users(id),
+  approved_at          TEXT,
+  paid_by              TEXT REFERENCES users(id),
+  paid_at              TEXT,
+  post_idempotency_key TEXT UNIQUE,
+  rejected_by          TEXT REFERENCES users(id),
+  rejected_at          TEXT,
+  rejection_reason     TEXT,
+  reversed_by          TEXT REFERENCES users(id),
+  reversed_at          TEXT,
+  reversal_reason      TEXT,
+  reversal_idempotency_key TEXT UNIQUE,
+  CONSTRAINT ck_exp_reviewed_fields CHECK (
+    status NOT IN ('reviewed', 'approved', 'paid', 'reversed') OR (reviewed_by IS NOT NULL AND reviewed_at IS NOT NULL)),
+  CONSTRAINT ck_exp_approved_fields CHECK (
+    status NOT IN ('approved', 'paid', 'reversed') OR (approved_by IS NOT NULL AND approved_at IS NOT NULL)),
+  CONSTRAINT ck_exp_paid_fields CHECK (
+    status NOT IN ('paid', 'reversed')
+    OR (paid_by IS NOT NULL AND paid_at IS NOT NULL AND voucher_number IS NOT NULL AND post_idempotency_key IS NOT NULL)),
+  CONSTRAINT ck_exp_reversed_fields CHECK (
+    status <> 'reversed'
+    OR (reversed_by IS NOT NULL AND reversed_at IS NOT NULL AND reversal_idempotency_key IS NOT NULL
+        AND length(trim(coalesce(reversal_reason, ''))) > 0)),
+  CONSTRAINT ck_exp_rejected_reason CHECK (
+    status <> 'rejected' OR length(trim(coalesce(rejection_reason, ''))) > 0),
+  -- separation of duties: the requester cannot review or approve their own request
+  CONSTRAINT ck_exp_sod_review  CHECK (reviewed_by IS NULL OR reviewed_by <> created_by),
+  CONSTRAINT ck_exp_sod_approve CHECK (approved_by IS NULL OR approved_by <> created_by)
+);
+CREATE UNIQUE INDEX ux_expense_voucher ON expense_transactions (fiscal_year_id, voucher_number)
+  WHERE voucher_number IS NOT NULL;
+
+-- Ledger = the register of real money movements. Append-only (see 0003).
+-- amount_satang is signed: receipts positive, payments negative. Balance = SUM(amount_satang).
+CREATE TABLE ledger_entries (
+  id                TEXT PRIMARY KEY,
+  fiscal_year_id    TEXT NOT NULL REFERENCES fiscal_years(id),
+  fund_source_id    TEXT NOT NULL REFERENCES fund_sources(id),
+  entry_date        TEXT NOT NULL CHECK (entry_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+  amount_satang     INTEGER NOT NULL CHECK (typeof(amount_satang) = 'integer' AND amount_satang <> 0),
+  kind              TEXT NOT NULL CHECK (kind IN ('opening', 'income', 'expense', 'reversal', 'adjustment')),
+  source_type       TEXT CHECK (source_type IN ('income', 'expense')),
+  source_id         TEXT,
+  reverses_entry_id TEXT UNIQUE REFERENCES ledger_entries(id),
+  ref_no            TEXT,
+  description       TEXT NOT NULL,
+  idempotency_key   TEXT NOT NULL UNIQUE,
+  created_by        TEXT NOT NULL REFERENCES users(id),
+  created_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  CONSTRAINT ck_led_opening  CHECK (kind <> 'opening'  OR (amount_satang > 0 AND source_type IS NULL)),
+  CONSTRAINT ck_led_income   CHECK (kind <> 'income'   OR (amount_satang > 0 AND source_type = 'income'  AND source_id IS NOT NULL)),
+  CONSTRAINT ck_led_expense  CHECK (kind <> 'expense'  OR (amount_satang < 0 AND source_type = 'expense' AND source_id IS NOT NULL)),
+  CONSTRAINT ck_led_reversal CHECK (kind <> 'reversal' OR (reverses_entry_id IS NOT NULL AND source_type IS NOT NULL AND source_id IS NOT NULL)),
+  CONSTRAINT ck_led_rev_only CHECK (kind = 'reversal' OR reverses_entry_id IS NULL)
+);
+
+-- One ledger row per posted source and kind: a transaction can never be posted twice.
+CREATE UNIQUE INDEX ux_ledger_one_per_source ON ledger_entries (source_type, source_id, kind)
+  WHERE kind IN ('income', 'expense');
+
+-- Workflow history, one row per status change.
+CREATE TABLE transaction_events (
+  id              TEXT PRIMARY KEY,
+  entity_type     TEXT NOT NULL CHECK (entity_type IN ('income', 'expense')),
+  entity_id       TEXT NOT NULL,
+  action          TEXT NOT NULL,
+  from_status     TEXT,
+  to_status       TEXT NOT NULL,
+  actor_id        TEXT NOT NULL REFERENCES users(id),
+  reason          TEXT,
+  idempotency_key TEXT UNIQUE,
+  created_at      TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+-- Audit log. Append-only (see 0003). old_value / new_value are JSON text.
+CREATE TABLE audit_logs (
+  id          TEXT PRIMARY KEY,
+  user_id     TEXT REFERENCES users(id),
+  action      TEXT NOT NULL,
+  entity_type TEXT NOT NULL,
+  entity_id   TEXT NOT NULL,
+  old_value   TEXT,
+  new_value   TEXT,
+  reason      TEXT,
+  created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+-- Evidence files live in a PRIVATE R2 bucket; only metadata and the object key are stored here.
+CREATE TABLE attachments (
+  id                TEXT PRIMARY KEY,
+  related_type      TEXT NOT NULL,
+  related_id        TEXT NOT NULL,
+  original_filename TEXT NOT NULL,
+  r2_object_key     TEXT NOT NULL UNIQUE,
+  mime_type         TEXT NOT NULL,
+  file_size         INTEGER NOT NULL CHECK (file_size > 0),
+  checksum_sha256   TEXT,
+  scan_status       TEXT NOT NULL DEFAULT 'pending' CHECK (scan_status IN ('pending', 'clean', 'rejected')),
+  uploaded_by       TEXT NOT NULL REFERENCES users(id),
+  uploaded_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE TABLE bank_accounts (
+  id                TEXT PRIMARY KEY,
+  fund_source_id    TEXT NOT NULL REFERENCES fund_sources(id),
+  account_name      TEXT NOT NULL,
+  account_no_masked TEXT,                          -- masked only (e.g. xxx-x-x1234-x). Never store a full account number here.
+  is_active         INTEGER NOT NULL DEFAULT 1 CHECK (is_active IN (0, 1)),
+  created_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+-- Reconciliation snapshots (append-only). The system never adjusts the ledger automatically.
+CREATE TABLE bank_reconciliations (
+  id                      TEXT PRIMARY KEY,
+  bank_account_id         TEXT NOT NULL REFERENCES bank_accounts(id),
+  as_of_date              TEXT NOT NULL CHECK (as_of_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'),
+  statement_balance_satang INTEGER NOT NULL CHECK (typeof(statement_balance_satang) = 'integer'),
+  book_balance_satang     INTEGER NOT NULL CHECK (typeof(book_balance_satang) = 'integer'),
+  difference_satang       INTEGER NOT NULL CHECK (typeof(difference_satang) = 'integer'),
+  note                    TEXT,
+  created_by              TEXT NOT NULL REFERENCES users(id),
+  created_at              TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+  CONSTRAINT ck_recon_diff CHECK (difference_satang = statement_balance_satang - book_balance_satang)
+);

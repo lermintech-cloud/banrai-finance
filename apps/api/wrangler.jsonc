@@ -1,0 +1,46 @@
+// Wrangler configuration: ONE Worker serves both the web app (apps/web/public) and the API (/api/*).
+// Top level = DEVELOPMENT. Production lives under env.production and shares no data with development
+// (bindings are not inherited by environments, so they are repeated there on purpose).
+// Replace the two REPLACE_WITH_* values with the database_id printed by `wrangler d1 create`.
+// database_id is not a secret, but never put API tokens or account IDs in this file.
+// Check current Wrangler docs before running any command (keys and flags change between versions).
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "banrai-finance-dev",
+  "main": "src/index.ts",
+  // Set to the date you test with (blueprint 12.3).
+  "compatibility_date": "2025-09-01",
+
+  // The Worker runs first for every request so it can add security headers to the web app.
+  "assets": { "directory": "../web/public", "binding": "ASSETS", "run_worker_first": true },
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "banrai_finance_dev",
+      "database_id": "REPLACE_WITH_DEV_DATABASE_ID",
+      "migrations_dir": "../../database/migrations"
+    }
+  ],
+  "r2_buckets": [
+    { "binding": "FILES", "bucket_name": "banrai-finance-dev" }
+  ],
+
+  "env": {
+    "production": {
+      "name": "banrai-finance",
+      "assets": { "directory": "../web/public", "binding": "ASSETS", "run_worker_first": true },
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "banrai_finance_prod",
+          "database_id": "REPLACE_WITH_PRODUCTION_DATABASE_ID",
+          "migrations_dir": "../../database/migrations"
+        }
+      ],
+      "r2_buckets": [
+        { "binding": "FILES", "bucket_name": "banrai-finance-documents" }
+      ]
+    }
+  }
+}

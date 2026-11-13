@@ -1,0 +1,11 @@
+{
+  "_comment": "Expected results of database/seeds/dev_seed.sql. Same numbers as the prototype dashboard. Amounts are satang.",
+  "funds": {
+    "f1": { "balance_satang": 38215000, "committed_satang": 642000 },
+    "f2": { "balance_satang": 16960000, "committed_satang": 0 },
+    "f3": { "balance_satang": 12320000, "committed_satang": 0 },
+    "f4": { "balance_satang": 5400000,  "committed_satang": 0 }
+  },
+  "total_balance_satang": 72895000,
+  "document_numbers": { "receipts_issued": 4, "vouchers_issued": 3 }
+}

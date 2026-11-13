@@ -1,0 +1,23 @@
+-- 0004_indexes.sql
+-- Query paths used by the balance views, lists and audit screens.
+-- Keep the number of indexes small: every index adds rows written on D1.
+
+CREATE INDEX idx_income_date        ON income_transactions (transaction_date);
+CREATE INDEX idx_income_fund_status ON income_transactions (fund_source_id, status);
+CREATE INDEX idx_expense_date        ON expense_transactions (transaction_date);
+CREATE INDEX idx_expense_fund_status ON expense_transactions (fund_source_id, status);
+CREATE INDEX idx_expense_project     ON expense_transactions (project_id, status);
+
+CREATE INDEX idx_ledger_fund_date ON ledger_entries (fund_source_id, entry_date);
+CREATE INDEX idx_ledger_source    ON ledger_entries (source_type, source_id);
+
+CREATE INDEX idx_events_entity ON transaction_events (entity_type, entity_id);
+CREATE INDEX idx_audit_entity  ON audit_logs (entity_type, entity_id);
+CREATE INDEX idx_audit_created ON audit_logs (created_at);
+CREATE INDEX idx_attach_related ON attachments (related_type, related_id);
+
+CREATE INDEX idx_sessions_user    ON sessions (user_id);
+CREATE INDEX idx_sessions_expires ON sessions (expires_at);
+CREATE INDEX idx_user_roles_role  ON user_roles (role_id);
+CREATE INDEX idx_projects_fund    ON projects (fund_source_id);
+CREATE INDEX idx_bank_fund        ON bank_accounts (fund_source_id);
