@@ -86,7 +86,7 @@ npm run dev
 npm run db:migrate:dev        # สร้างตารางบน D1 ของ Dev
 npm run create-admin
 npx wrangler d1 execute DB --remote --config apps/api/wrangler.jsonc --file backups/create-admin.sql
-npm run deploy:dev            # ได้ที่อยู่เว็บ https://banrai-finance-dev.<บัญชี>.workers.dev
+npm run deploy:dev            # ได้ที่อยู่เว็บ https://banrai-finance.<บัญชี>.workers.dev
 ```
 เปิดที่อยู่ที่ได้ → เข้าสู่ระบบ → ระบบจะพาไปหน้า **เริ่มต้นใช้งาน** ให้ทำตามลำดับ
 1. เปิดปีงบประมาณ

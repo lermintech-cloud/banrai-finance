@@ -6,7 +6,7 @@
 // Check current Wrangler docs before running any command (keys and flags change between versions).
 {
   "$schema": "../../node_modules/wrangler/config-schema.json",
-  "name": "banrai-finance-dev",
+  "name": "banrai-finance",
   "main": "src/index.ts",
   // Set to the date you test with (blueprint 12.3).
   "compatibility_date": "2025-09-01",
@@ -27,7 +27,7 @@
 
   "env": {
     "production": {
-      "name": "banrai-finance",
+      "name": "banrai-finance-production",
       "assets": { "directory": "../web/public", "binding": "ASSETS", "run_worker_first": true },
       "d1_databases": [
         {
