@@ -1,0 +1,4 @@
+# Copy to apps/api/.dev.vars for local `wrangler dev` (never commit .dev.vars).
+# This version needs no secrets. If one is added later, set production values with `wrangler secret put`.
+# Optional: an extra origin allowed to call the API (same-origin is always allowed).
+# ALLOWED_ORIGIN=
