@@ -271,3 +271,21 @@ test('audit trail records sign-ins and admin actions without secrets', async () 
   for (const a of ['auth.login', 'auth.login_failed', 'user.create']) assert.ok(acts.includes(a), a);
   assert.ok(!JSON.stringify(rows).includes('Temp-pass') && !JSON.stringify(rows).includes('wrong-password') && !JSON.stringify(rows).includes(PW));
 });
+
+test('without an R2 bucket the crest image is kept in the database and still needs a session', async () => {
+  const c = fresh();
+  (c.env as any).FILES = undefined;
+  await all(c);
+  const png = new Uint8Array(70000).fill(7);
+  png.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  assert.equal((await call(c, 'fin', 'PUT', '/api/settings/crest', png)).status, 200);
+  assert.equal(c.raw.prepare('SELECT COUNT(*) n FROM stored_files').get()!.n, 1);
+  assert.equal((await call(c, null, 'GET', '/api/settings/crest')).status, 401);
+  const got = await call(c, 'aud', 'GET', '/api/settings/crest');
+  assert.deepEqual([got.status, got.headers.get('content-type')], [200, 'image/png']);
+  assert.deepEqual([...new Uint8Array(got.body)], [...png]);
+  assert.equal((await call(c, 'fin', 'PUT', '/api/settings/crest', new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2]))).status, 200);
+  assert.equal(c.raw.prepare('SELECT COUNT(*) n FROM stored_files').get()!.n, 1, 'old image removed');
+  assert.equal((await call(c, 'fin', 'DELETE', '/api/settings/crest')).status, 200);
+  assert.deepEqual([c.raw.prepare('SELECT COUNT(*) n FROM stored_files').get()!.n, (await call(c, 'fin', 'GET', '/api/settings/crest')).status], [0, 404]);
+});

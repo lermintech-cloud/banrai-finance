@@ -1,0 +1,1 @@
+CREATE TABLE stored_files ( object_key TEXT PRIMARY KEY, content_type TEXT NOT NULL CHECK (content_type IN ('image/png', 'image/jpeg')), data_base64 TEXT NOT NULL, size_bytes INTEGER NOT NULL CHECK (typeof(size_bytes) = 'integer' AND size_bytes BETWEEN 1 AND 1048576), created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')) );

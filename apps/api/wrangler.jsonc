@@ -22,9 +22,8 @@
       "migrations_dir": "../../database/migrations"
     }
   ],
-  "r2_buckets": [
-    { "binding": "FILES", "bucket_name": "banrai-finance-dev" }
-  ],
+  // No R2 bucket: the crest image is kept in D1 (table stored_files). To use a private R2 bucket instead, add:
+  //   "r2_buckets": [ { "binding": "FILES", "bucket_name": "banrai-finance-dev" } ],
 
   "env": {
     "production": {
@@ -37,10 +36,8 @@
           "database_id": "REPLACE_WITH_PRODUCTION_DATABASE_ID",
           "migrations_dir": "../../database/migrations"
         }
-      ],
-      "r2_buckets": [
-        { "binding": "FILES", "bucket_name": "banrai-finance-documents" }
       ]
+      // Optional, same as above: "r2_buckets": [ { "binding": "FILES", "bucket_name": "banrai-finance-documents" } ]
     }
   }
 }

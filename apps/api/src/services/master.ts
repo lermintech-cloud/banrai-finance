@@ -196,12 +196,28 @@ export async function reconcile(db: D1Database, s: Session, bid: string, body: R
   return { id: rid, differenceSatang: amount - book };
 }
 
-// ---- Garuda crest image: kept in the PRIVATE R2 bucket, served only to signed-in users.
+// ---- Garuda crest image: private. In an R2 bucket when one is bound, otherwise in the D1 table stored_files.
+// Either way it is served only to signed-in users through the Worker.
 const MAX_CREST = 1024 * 1024;
 function sniff(b: Uint8Array): { ext: string; type: string } | null {
   if (b.length > 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return { ext: 'png', type: 'image/png' };
   if (b.length > 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return { ext: 'jpg', type: 'image/jpeg' };
   return null;
+}
+const b64 = (u: Uint8Array) => { let s = ''; for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000)); return btoa(s); };
+const unb64 = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+async function filePut(env: Env, key: string, buf: Uint8Array, type: string) {
+  if (env.FILES) await env.FILES.put(key, buf, { httpMetadata: { contentType: type } });
+  else await stmt(env.DB, 'INSERT INTO stored_files (object_key, content_type, data_base64, size_bytes) VALUES (?1, ?2, ?3, ?4)', [key, type, b64(buf), buf.length]).run();
+}
+async function fileGet(env: Env, key: string): Promise<BodyInit | null> {
+  if (env.FILES) return ((await env.FILES.get(key))?.body as BodyInit | undefined) ?? null;
+  const r = await stmt(env.DB, 'SELECT data_base64 AS d FROM stored_files WHERE object_key = ?1', [key]).first<{ d: string }>();
+  return r ? unb64(r.d) : null;
+}
+async function fileDelete(env: Env, key: string) {
+  if (env.FILES) await env.FILES.delete(key);
+  else await stmt(env.DB, 'DELETE FROM stored_files WHERE object_key = ?1', [key]).run();
 }
 export async function putCrest(env: Env, s: Session, req: Request, now: Date) {
   requirePerm(s, 'docset');
@@ -212,17 +228,17 @@ export async function putCrest(env: Env, s: Session, req: Request, now: Date) {
   const old = await env.DB.prepare('SELECT crest_object_key AS k FROM school_settings WHERE id = 1').first<{ k: string | null }>();
   if (!old) throw new HttpError(409, 'settings_required');
   const key = `crest/${crypto.randomUUID()}.${kind.ext}`, t = now.toISOString();
-  await env.FILES.put(key, buf, { httpMetadata: { contentType: kind.type } });
+  await filePut(env, key, buf, kind.type);
   await env.DB.batch([stmt(env.DB, 'UPDATE school_settings SET crest_object_key = ?1, updated_at = ?2, updated_by = ?3 WHERE id = 1', [key, t, s.userId]), audit(env.DB, s, 'settings.crest', 'settings', '1', t)]);
-  if (old.k) await env.FILES.delete(old.k);
+  if (old.k) await fileDelete(env, old.k);
   return { crest: key.slice(-12) };
 }
 export async function getCrest(env: Env, s: Session): Promise<Response> {
   requirePerm(s, 'read');
   const r = await env.DB.prepare('SELECT crest_object_key AS k FROM school_settings WHERE id = 1').first<{ k: string | null }>();
-  const obj = r?.k ? await env.FILES.get(r.k) : null;
-  if (!obj) throw new HttpError(404, 'not_found');
-  return new Response(obj.body, { headers: { 'content-type': r!.k!.endsWith('.png') ? 'image/png' : 'image/jpeg', 'cache-control': 'private, max-age=300', 'x-content-type-options': 'nosniff' } });
+  const body = r?.k ? await fileGet(env, r.k) : null;
+  if (!body) throw new HttpError(404, 'not_found');
+  return new Response(body, { headers: { 'content-type': r!.k!.endsWith('.png') ? 'image/png' : 'image/jpeg', 'cache-control': 'private, max-age=300', 'x-content-type-options': 'nosniff' } });
 }
 export async function deleteCrest(env: Env, s: Session, now: Date) {
   requirePerm(s, 'docset');
@@ -230,6 +246,6 @@ export async function deleteCrest(env: Env, s: Session, now: Date) {
   if (!r?.k) return { ok: true };
   const t = now.toISOString();
   await env.DB.batch([stmt(env.DB, 'UPDATE school_settings SET crest_object_key = NULL, updated_at = ?1, updated_by = ?2 WHERE id = 1', [t, s.userId]), audit(env.DB, s, 'settings.crest_delete', 'settings', '1', t)]);
-  await env.FILES.delete(r.k);
+  await fileDelete(env, r.k);
   return { ok: true };
 }

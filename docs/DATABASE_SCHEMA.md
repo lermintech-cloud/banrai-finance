@@ -64,7 +64,7 @@
 | บนหน้าจอ | ในฐานข้อมูล |
 | --- | --- |
 | `S.cfg` (ชื่อโรงเรียน ที่อยู่ ส่วนราชการ เรียน ผู้ลงนาม ผู้ลงนามบันทึกข้อความ) | `school_settings`, `document_signers` |
-| ครุฑ | `school_settings.crest_object_key` → ไฟล์ใน R2 แบบ Private อ่านผ่าน `/api/settings/crest` |
+| ครุฑ | `school_settings.crest_object_key` → ตาราง `stored_files` (0007) หรือ R2 แบบ Private ถ้าผูกไว้ อ่านผ่าน `/api/settings/crest` |
 | แหล่งเงิน/โครงการ | `fund_types`, `fund_sources`, `projects` |
 | รายการรับ/จ่าย + ประวัติ | `income_transactions`, `expense_transactions`, `transaction_events` |
 | ยอดคงเหลือแต่ละแหล่งเงิน | คำนวณจาก `ledger_entries` (`v_fund_summary`) ไม่เก็บเป็นตัวเลขตายตัว |

@@ -1,6 +1,6 @@
 # คู่มือติดตั้ง (ทีละขั้น)
 
-ภาพรวม: โค้ดอยู่ใน **GitHub** → ส่งขึ้น **Cloudflare** เป็น Worker ตัวเดียว (หน้าเว็บ + API) → ข้อมูลอยู่ใน **D1** ไฟล์อยู่ใน **R2**
+ภาพรวม: โค้ดอยู่ใน **GitHub** → ส่งขึ้น **Cloudflare** เป็น Worker ตัวเดียว (หน้าเว็บ + API) → ข้อมูลอยู่ใน **D1** (R2 ไม่จำเป็น: ถ้าไม่ผูก R2 รูปตราครุฑจะเก็บใน D1)
 
 | ระดับ | ได้อะไร | ต้องมี | สถานะการทดสอบ |
 | --- | --- | --- | --- |
@@ -63,14 +63,13 @@ npx wrangler login
 ### 3.2 สร้างฐานข้อมูลและที่เก็บไฟล์ของ Dev
 ```bash
 npx wrangler d1 create banrai_finance_dev
-npx wrangler r2 bucket create banrai-finance-dev
 ```
 คัดลอก `database_id` ที่ได้ ไปแทน `REPLACE_WITH_DEV_DATABASE_ID` ใน `apps/api/wrangler.jsonc`
 ตั้ง `compatibility_date` ในไฟล์เดียวกันเป็นวันที่ทำการทดสอบ
 
 ### 3.3 ลองในเครื่องด้วย Wrangler ก่อน
 ```bash
-npm run db:migrate:local      # สร้างตาราง (ไฟล์ 0001-0006)
+npm run db:migrate:local      # สร้างตาราง (ไฟล์ 0001-0007)
 npm run db:seed:local         # ข้อมูลตัวอย่าง (ผู้ใช้ตัวอย่างถูกปิด เข้าไม่ได้)
 npm run create-admin          # สร้างผู้ดูแลของคุณเอง: ถามชื่อผู้ใช้ ชื่อ และรหัสผ่าน
 npx wrangler d1 execute DB --local --config apps/api/wrangler.jsonc --file backups/create-admin.sql
@@ -110,7 +109,6 @@ npm run deploy:dev            # ได้ที่อยู่เว็บ https
 ทำเมื่อผ่านเกณฑ์ทุกข้อใน `docs/DEPLOYMENT.md` (Deployment Gate) เท่านั้น ลำดับโดยย่อ
 ```bash
 npx wrangler d1 create banrai_finance_prod
-npx wrangler r2 bucket create banrai-finance-documents
 # ใส่ database_id ใน env.production ของ apps/api/wrangler.jsonc
 npx wrangler d1 migrations apply DB --remote --config apps/api/wrangler.jsonc --env production
 npm run create-admin

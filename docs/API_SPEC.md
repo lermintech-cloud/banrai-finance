@@ -31,7 +31,7 @@ Worker: `apps/api/src/index.ts` ทุกเส้นทางใต้ `/api/` 
 | --- | --- | --- | --- |
 | GET | `/api/state` | `read` | ทุกอย่างที่หน้าจอใช้ในครั้งเดียว: ปีงบปัจจุบัน ตั้งค่า แหล่งเงิน โครงการ ธนาคาร รายการรับ/จ่าย ทะเบียนคุม; บันทึกตรวจสอบเฉพาะผู้มี `audit_read` |
 | PUT | `/api/settings` | `docset` | ข้อมูลโรงเรียนและผู้ลงนาม |
-| PUT / GET / DELETE | `/api/settings/crest` | `docset` / `read` / `docset` | ตราครุฑ PNG/JPG ≤ 1 MB ตรวจชนิดจากเนื้อไฟล์ เก็บใน R2 |
+| PUT / GET / DELETE | `/api/settings/crest` | `docset` / `read` / `docset` | ตราครุฑ PNG/JPG ≤ 1 MB ตรวจชนิดจากเนื้อไฟล์ เก็บใน D1 (หรือ R2 ถ้าผูกไว้) |
 | POST | `/api/fiscal-years` | `setup` | `{yearBe}` สร้างปีงบ (1 ต.ค. - 30 ก.ย.) และเลขเอกสารชุดใหม่ |
 | POST | `/api/fiscal-years/:id/close` | `setup` | ปิดปี (ต้องไม่มีรายการค้าง) เปิดกลับไม่ได้ผ่าน API |
 | POST | `/api/funds` | `setup` | `{name,opening}` สร้างแหล่งเงิน + ยอดยกมา + บัญชีธนาคาร |
