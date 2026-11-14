@@ -69,7 +69,7 @@ npx wrangler d1 create banrai_finance_dev
 
 ### 3.3 ลองในเครื่องด้วย Wrangler ก่อน
 ```bash
-npm run db:migrate:local      # สร้างตาราง (ไฟล์ 0001-0007)
+npm run db:migrate:local      # สร้างตาราง (ไฟล์ 0001-0008)
 npm run db:seed:local         # ข้อมูลตัวอย่าง (ผู้ใช้ตัวอย่างถูกปิด เข้าไม่ได้)
 npm run create-admin          # สร้างผู้ดูแลของคุณเอง: ถามชื่อผู้ใช้ ชื่อ และรหัสผ่าน
 npx wrangler d1 execute DB --local --config apps/api/wrangler.jsonc --file backups/create-admin.sql

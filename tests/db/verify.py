@@ -15,10 +15,23 @@ import sys
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 read = lambda p: open(os.path.join(ROOT, p), encoding='utf-8').read()
 
-def fresh(seed=True):
-    c = sqlite3.connect(':memory:')
+# Limits Cloudflare D1 enforces but stock SQLite does not (developers.cloudflare.com/d1/platform/limits).
+# Both bit us on the first real deployment, so every database in these tests runs with them.
+D1_LIKE_PATTERN_BYTES = 50   # documented: "Maximum characters (bytes) in a LIKE or GLOB pattern"
+D1_COMPOUND_SELECT = 5       # not documented; a 6-term UNION ALL was rejected on D1, 3 terms work
+
+def d1(c):
+    if hasattr(c, 'setlimit'):
+        c.setlimit(sqlite3.SQLITE_LIMIT_LIKE_PATTERN_LENGTH, D1_LIKE_PATTERN_BYTES)
+        c.setlimit(sqlite3.SQLITE_LIMIT_COMPOUND_SELECT, D1_COMPOUND_SELECT)
+    return c
+
+def fresh(seed=True, folder='database/migrations'):
+    c = d1(sqlite3.connect(':memory:'))
     c.execute('PRAGMA foreign_keys = ON')
-    for f in sorted(glob.glob(os.path.join(ROOT, 'database/migrations/*.sql'))):
+    for f in sorted(glob.glob(os.path.join(ROOT, folder, '0*.sql'))):
+        if folder.endswith('console') and '0003b' in f:
+            continue
         c.executescript(open(f, encoding='utf-8').read())
     if seed:
         c.executescript(read('database/seeds/dev_seed.sql'))
@@ -44,12 +57,33 @@ check('migrations are numbered 0001..000N without gaps', [n[:4] for n in names] 
 import re
 for f in names:
     txt = re.sub(r'--[^\n]*', '', read('database/migrations/' + f)).upper()   # ignore comments
-    bad = re.search(r'\b(COMMIT|ROLLBACK|PRAGMA|DROP\s+(TABLE|VIEW|TRIGGER|INDEX))\b|BEGIN\s+(TRANSACTION|DEFERRED|IMMEDIATE|EXCLUSIVE)', txt)
-    check(f + ' has no transaction control / PRAGMA / DROP', not bad, bad.group(0) if bad else '')
+    bad = re.search(r'\b(COMMIT|ROLLBACK|PRAGMA)\b|BEGIN\s+(TRANSACTION|DEFERRED|IMMEDIATE|EXCLUSIVE)', txt)
+    check(f + ' has no transaction control / PRAGMA', not bad, bad.group(0) if bad else '')
+    drops = re.findall(r'\bDROP\s+(?:TABLE|VIEW|TRIGGER|INDEX)\s+\w+', txt)
+    allowed = ['DROP VIEW V_INTEGRITY_ISSUES', 'DROP VIEW V_INTEGRITY_ISSUES_LEDGER', 'DROP VIEW V_FUND_SUMMARY', 'DROP TABLE FUND_SOURCES'] if f.startswith('0008_') else []
+    check(f + ' drops nothing outside its reviewed list', all(d in allowed for d in drops), drops)
     check(f + ' has no REAL/FLOAT/DOUBLE columns', not re.search(r'\b(REAL|FLOAT|DOUBLE)\b', txt))
 
 c = fresh(seed=False)
 check('migrations apply on an empty database', True)
+check('test databases run with the D1 limits', hasattr(c, 'setlimit') and c.getlimit(sqlite3.SQLITE_LIMIT_LIKE_PATTERN_LENGTH) == D1_LIKE_PATTERN_BYTES)
+schema = ' '.join(r[0] or '' for r in c.execute('select sql from sqlite_master'))
+longest = max([len(m) for m in re.findall(r"(?:GLOB|LIKE)\s*'((?:[^']|'')*)'", schema, re.I)] + [0])
+check('every LIKE/GLOB pattern in the final schema fits D1 (<= 50 bytes)', longest <= D1_LIKE_PATTERN_BYTES, longest)
+check('fund colour check accepts #0A4FCF and rejects bad values (under D1 limits)',
+      c.execute("insert into fund_types values ('ft','FT','x',1)") and
+      not fails(c, "insert into fund_sources (id, fund_type_id, source_name, color) values ('ok','ft','ok','#0A4FCF')", 'x') and
+      all(fails(c, "insert into fund_sources (id, fund_type_id, source_name, color) values (?, 'ft', ?, ?)", 'CHECK', (v, v, v))
+          for v in ('0A4FCF', '#0A4FC', '#0A4FCFF', '#0A4FCG', '#0A4F C', 'blue')))
+c.execute("delete from fund_sources"); c.execute("delete from fund_types")
+cs = fresh(folder='database/console')
+check('console SQL files build the same schema as the migrations and take the seed',
+      sorted(cs.execute("select type, name from sqlite_master").fetchall()) == sorted(fresh(seed=False).execute("select type, name from sqlite_master").fetchall()))
+for f in names:
+    one = re.sub(r'\s+', ' ', re.sub(r'--[^\n]*', '', read('database/migrations/' + f))).strip().upper()
+    con = re.sub(r'\s+', ' ', read('database/console/' + f)).strip().upper() if os.path.exists(os.path.join(ROOT, 'database/console', f)) else None
+    check('console copy exists for ' + f, con is not None)
+c = fresh(seed=False)
 check('reference roles exist', c.execute('select count(*) from roles').fetchone()[0] == 6)
 cols = [r for t in ('income_transactions', 'expense_transactions', 'ledger_entries', 'projects', 'bank_reconciliations') for r in c.execute(f'pragma table_info({t})')]
 check('every *_satang column is INTEGER', all(r[2] == 'INTEGER' for r in cols if r[1].endswith('_satang')))
