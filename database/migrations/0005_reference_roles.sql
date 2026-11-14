@@ -3,36 +3,46 @@
 -- The role names and who may do what are taken from the prototype and the blueprint (section 9.1).
 -- The school must confirm role names, approvers and limits before Production (blueprint section 9.1).
 
-INSERT OR IGNORE INTO permissions (id, code, description) VALUES
-  ('perm-read',       'read',       'ดูข้อมูลการเงินและรายงาน'),
-  ('perm-audit-read', 'audit_read', 'ดูบันทึกตรวจสอบ (Audit Log)'),
-  ('perm-create',     'create',     'สร้างรายการและส่งตรวจ'),
-  ('perm-pay',        'pay',        'บันทึกจ่ายเงิน'),
-  ('perm-review',     'review',     'ตรวจรายการ'),
-  ('perm-confirm',    'confirm',    'ยืนยันรับเงิน'),
-  ('perm-reverse',    'reverse',    'กลับรายการ'),
-  ('perm-approve',    'approve',    'อนุมัติ'),
-  ('perm-setup',      'setup',      'ตั้งค่าระบบ แหล่งเงิน และกู้คืนข้อมูล'),
-  ('perm-proj',       'proj',       'เพิ่มโครงการ'),
-  ('perm-docset',     'docset',     'ตั้งค่าเอกสารและผู้ลงนาม'),
-  ('perm-user-admin', 'user_admin', 'จัดการบัญชีผู้ใช้และสิทธิ์');
+INSERT OR IGNORE INTO permissions (id, code, description) VALUES ('perm-read',       'read',       'ดูข้อมูลการเงินและรายงาน');
+INSERT OR IGNORE INTO permissions (id, code, description) VALUES ('perm-audit-read', 'audit_read', 'ดูบันทึกตรวจสอบ (Audit Log)');
+INSERT OR IGNORE INTO permissions (id, code, description) VALUES ('perm-create',     'create',     'สร้างรายการและส่งตรวจ');
+INSERT OR IGNORE INTO permissions (id, code, description) VALUES ('perm-pay',        'pay',        'บันทึกจ่ายเงิน');
+INSERT OR IGNORE INTO permissions (id, code, description) VALUES ('perm-review',     'review',     'ตรวจรายการ');
+INSERT OR IGNORE INTO permissions (id, code, description) VALUES ('perm-confirm',    'confirm',    'ยืนยันรับเงิน');
+INSERT OR IGNORE INTO permissions (id, code, description) VALUES ('perm-reverse',    'reverse',    'กลับรายการ');
+INSERT OR IGNORE INTO permissions (id, code, description) VALUES ('perm-approve',    'approve',    'อนุมัติ');
+INSERT OR IGNORE INTO permissions (id, code, description) VALUES ('perm-setup',      'setup',      'ตั้งค่าระบบ แหล่งเงิน และกู้คืนข้อมูล');
+INSERT OR IGNORE INTO permissions (id, code, description) VALUES ('perm-proj',       'proj',       'เพิ่มโครงการ');
+INSERT OR IGNORE INTO permissions (id, code, description) VALUES ('perm-docset',     'docset',     'ตั้งค่าเอกสารและผู้ลงนาม');
+INSERT OR IGNORE INTO permissions (id, code, description) VALUES ('perm-user-admin', 'user_admin', 'จัดการบัญชีผู้ใช้และสิทธิ์');
 
-INSERT OR IGNORE INTO roles (id, role_key, role_name, description) VALUES
-  ('role-super-admin', 'super_admin', 'ผู้ดูแลระบบ',          'ตั้งค่าระบบและผู้ใช้ ไม่ควรใช้ทำธุรกรรมประจำวัน'),
-  ('role-director',    'director',    'ผู้อำนวยการ',          'อนุมัติรายการ ตั้งค่าระบบ'),
-  ('role-finance',     'finance',     'เจ้าหน้าที่การเงิน',   'บันทึกรับ สร้างคำขอ จ่ายเงิน จัดทำเอกสาร'),
-  ('role-accountant',  'accountant',  'เจ้าหน้าที่บัญชี',     'ตรวจรายการ ยืนยันรับเงิน กลับรายการ'),
-  ('role-auditor',     'auditor',     'ผู้ตรวจสอบ',          'อ่านอย่างเดียว รวมถึง Audit Log'),
-  ('role-requester',   'requester',   'ผู้เบิก/ผู้รับผิดชอบโครงการ', 'สร้างคำขอและติดตามสถานะ');
+INSERT OR IGNORE INTO roles (id, role_key, role_name, description) VALUES ('role-super-admin', 'super_admin', 'ผู้ดูแลระบบ',          'ตั้งค่าระบบและผู้ใช้ ไม่ควรใช้ทำธุรกรรมประจำวัน');
+INSERT OR IGNORE INTO roles (id, role_key, role_name, description) VALUES ('role-director',    'director',    'ผู้อำนวยการ',          'อนุมัติรายการ ตั้งค่าระบบ');
+INSERT OR IGNORE INTO roles (id, role_key, role_name, description) VALUES ('role-finance',     'finance',     'เจ้าหน้าที่การเงิน',   'บันทึกรับ สร้างคำขอ จ่ายเงิน จัดทำเอกสาร');
+INSERT OR IGNORE INTO roles (id, role_key, role_name, description) VALUES ('role-accountant',  'accountant',  'เจ้าหน้าที่บัญชี',     'ตรวจรายการ ยืนยันรับเงิน กลับรายการ');
+INSERT OR IGNORE INTO roles (id, role_key, role_name, description) VALUES ('role-auditor',     'auditor',     'ผู้ตรวจสอบ',          'อ่านอย่างเดียว รวมถึง Audit Log');
+INSERT OR IGNORE INTO roles (id, role_key, role_name, description) VALUES ('role-requester',   'requester',   'ผู้เบิก/ผู้รับผิดชอบโครงการ', 'สร้างคำขอและติดตามสถานะ');
 
-INSERT OR IGNORE INTO role_permissions (role_id, permission_id) VALUES
-  ('role-super-admin', 'perm-read'), ('role-super-admin', 'perm-audit-read'), ('role-super-admin', 'perm-setup'),
-  ('role-super-admin', 'perm-docset'), ('role-super-admin', 'perm-user-admin'),
-  ('role-director', 'perm-read'), ('role-director', 'perm-approve'), ('role-director', 'perm-setup'),
-  ('role-director', 'perm-proj'), ('role-director', 'perm-docset'),
-  ('role-finance', 'perm-read'), ('role-finance', 'perm-create'), ('role-finance', 'perm-pay'),
-  ('role-finance', 'perm-proj'), ('role-finance', 'perm-docset'),
-  ('role-accountant', 'perm-read'), ('role-accountant', 'perm-review'), ('role-accountant', 'perm-confirm'),
-  ('role-accountant', 'perm-reverse'),
-  ('role-auditor', 'perm-read'), ('role-auditor', 'perm-audit-read'),
-  ('role-requester', 'perm-read'), ('role-requester', 'perm-create');
+INSERT OR IGNORE INTO role_permissions (role_id, permission_id) VALUES ('role-super-admin', 'perm-read');
+INSERT OR IGNORE INTO role_permissions (role_id, permission_id) VALUES ('role-super-admin', 'perm-audit-read');
+INSERT OR IGNORE INTO role_permissions (role_id, permission_id) VALUES ('role-super-admin', 'perm-setup');
+INSERT OR IGNORE INTO role_permissions (role_id, permission_id) VALUES ('role-super-admin', 'perm-docset');
+INSERT OR IGNORE INTO role_permissions (role_id, permission_id) VALUES ('role-super-admin', 'perm-user-admin');
+INSERT OR IGNORE INTO role_permissions (role_id, permission_id) VALUES ('role-director', 'perm-read');
+INSERT OR IGNORE INTO role_permissions (role_id, permission_id) VALUES ('role-director', 'perm-approve');
+INSERT OR IGNORE INTO role_permissions (role_id, permission_id) VALUES ('role-director', 'perm-setup');
+INSERT OR IGNORE INTO role_permissions (role_id, permission_id) VALUES ('role-director', 'perm-proj');
+INSERT OR IGNORE INTO role_permissions (role_id, permission_id) VALUES ('role-director', 'perm-docset');
+INSERT OR IGNORE INTO role_permissions (role_id, permission_id) VALUES ('role-finance', 'perm-read');
+INSERT OR IGNORE INTO role_permissions (role_id, permission_id) VALUES ('role-finance', 'perm-create');
+INSERT OR IGNORE INTO role_permissions (role_id, permission_id) VALUES ('role-finance', 'perm-pay');
+INSERT OR IGNORE INTO role_permissions (role_id, permission_id) VALUES ('role-finance', 'perm-proj');
+INSERT OR IGNORE INTO role_permissions (role_id, permission_id) VALUES ('role-finance', 'perm-docset');
+INSERT OR IGNORE INTO role_permissions (role_id, permission_id) VALUES ('role-accountant', 'perm-read');
+INSERT OR IGNORE INTO role_permissions (role_id, permission_id) VALUES ('role-accountant', 'perm-review');
+INSERT OR IGNORE INTO role_permissions (role_id, permission_id) VALUES ('role-accountant', 'perm-confirm');
+INSERT OR IGNORE INTO role_permissions (role_id, permission_id) VALUES ('role-accountant', 'perm-reverse');
+INSERT OR IGNORE INTO role_permissions (role_id, permission_id) VALUES ('role-auditor', 'perm-read');
+INSERT OR IGNORE INTO role_permissions (role_id, permission_id) VALUES ('role-auditor', 'perm-audit-read');
+INSERT OR IGNORE INTO role_permissions (role_id, permission_id) VALUES ('role-requester', 'perm-read');
+INSERT OR IGNORE INTO role_permissions (role_id, permission_id) VALUES ('role-requester', 'perm-create');

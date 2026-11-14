@@ -187,7 +187,9 @@ SELECT p.id AS project_id, p.fiscal_year_id, p.fund_source_id, p.project_code, p
   FROM projects p;
 
 -- Anything returned here is a data-integrity problem. A healthy database returns zero rows.
-CREATE VIEW v_integrity_issues AS
+-- D1 allows only a few SELECTs in one UNION chain ("too many terms in compound SELECT"),
+-- so the checks are split into two small views and joined here. Keep every chain at 3 terms or fewer.
+CREATE VIEW v_integrity_issues_tx AS
 SELECT 'income_posted_without_ledger' AS issue, t.id AS entity_id
   FROM income_transactions t
  WHERE t.status IN ('posted', 'reversed')
@@ -201,9 +203,10 @@ UNION ALL
 SELECT 'income_reversed_without_reversal_entry', t.id
   FROM income_transactions t
  WHERE t.status = 'reversed'
-   AND NOT EXISTS (SELECT 1 FROM ledger_entries l WHERE l.kind = 'reversal' AND l.source_type = 'income' AND l.source_id = t.id)
-UNION ALL
-SELECT 'expense_reversed_without_reversal_entry', t.id
+   AND NOT EXISTS (SELECT 1 FROM ledger_entries l WHERE l.kind = 'reversal' AND l.source_type = 'income' AND l.source_id = t.id);
+
+CREATE VIEW v_integrity_issues_ledger AS
+SELECT 'expense_reversed_without_reversal_entry' AS issue, t.id AS entity_id
   FROM expense_transactions t
  WHERE t.status = 'reversed'
    AND NOT EXISTS (SELECT 1 FROM ledger_entries l WHERE l.kind = 'reversal' AND l.source_type = 'expense' AND l.source_id = t.id)
@@ -217,3 +220,8 @@ UNION ALL
 SELECT 'negative_fund_balance', s.fund_source_id
   FROM v_fund_summary s
  WHERE s.balance_satang < 0;
+
+CREATE VIEW v_integrity_issues AS
+SELECT issue, entity_id FROM v_integrity_issues_tx
+UNION ALL
+SELECT issue, entity_id FROM v_integrity_issues_ledger;
