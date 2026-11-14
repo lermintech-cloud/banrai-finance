@@ -14,3 +14,10 @@
 
 ไฟล์ `0003_integrity.sql` ในโฟลเดอร์นี้ใช้ `IF NOT EXISTS` จึงวางซ้ำได้ถ้าครั้งก่อนค้างกลางทาง
 `0003b_fix_integrity_view.sql` = เฉพาะ 3 วิวท้ายไฟล์ 0003 สำหรับฐานข้อมูลที่วางไฟล์ 0003 รุ่นก่อนแล้วติด "too many terms in compound SELECT" (ถ้าวางไฟล์ 0003 รุ่นนี้ผ่านแล้ว ไม่ต้องใช้)
+
+## ซ่อมฐานข้อมูลที่วางไม่ครบ: `repair_0003_0008.sql`
+D1 Console ยกเลิกคำสั่งทั้งชุดเมื่อมีคำสั่งเดียว error ฐานข้อมูลที่เคยวางไฟล์ 0003 รุ่นแรก (ที่ error "too many terms in compound SELECT")
+จึงไม่มีทริกเกอร์ 28 ตัวและวิว `v_fund_summary`, `v_project_usage` ไฟล์ซ่อมนี้สร้างส่วนที่ขาดให้ครบและแก้ตาราง `fund_sources` (แทน 0008)
+ใช้ได้กับฐานข้อมูลที่วางถึง 0007 หรือ 0008 แล้ว วางซ้ำได้ ไม่ลบข้อมูล
+ตรวจหลังวาง (ต้องได้ index 19, table 23, trigger 28, view 5):
+`SELECT type, COUNT(*) AS n FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name NOT LIKE 'd1_%' GROUP BY type ORDER BY type;`

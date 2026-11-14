@@ -83,6 +83,23 @@ for f in names:
     one = re.sub(r'\s+', ' ', re.sub(r'--[^\n]*', '', read('database/migrations/' + f))).strip().upper()
     con = re.sub(r'\s+', ' ', read('database/console/' + f)).strip().upper() if os.path.exists(os.path.join(ROOT, 'database/console', f)) else None
     check('console copy exists for ' + f, con is not None)
+# ---- console repair script: brings a database pasted by hand through the D1 console to the full schema,
+# whatever state it was left in (D1 rolls back a whole paste when one statement fails).
+ref = sorted(fresh(seed=False).execute("select type, name from sqlite_master where name not like 'sqlite_%'").fetchall())
+base = ['0001_core.sql', '0002_transactions.sql']
+rest = ['0004_indexes.sql', '0005_reference_roles.sql', '0006_auth.sql', '0007_files_in_db.sql']
+for label, files in [('0003 rolled back, then 0003b', base + ['0003b_fix_integrity_view.sql'] + rest),
+                     ('complete up to 0007', base + ['0003_integrity.sql'] + rest),
+                     ('complete up to 0008', base + ['0003_integrity.sql'] + rest + ['0008_fund_color_check.sql'])]:
+    r = d1(sqlite3.connect(':memory:')); r.execute('PRAGMA foreign_keys = ON')
+    for f in files: r.executescript(read('database/console/' + f))
+    for _ in range(2): r.executescript(read('database/console/repair_0003_0008.sql'))
+    got = sorted(r.execute("select type, name from sqlite_master where name not like 'sqlite_%'").fetchall())
+    r.executescript(read('database/seeds/dev_seed.sql'))
+    check('console repair from "' + label + '" (run twice) gives the full schema and a working ledger',
+          got == ref and r.execute('select count(*) from v_integrity_issues').fetchone()[0] == 0 and
+          fails(r, 'update ledger_entries set amount_satang = 1 where rowid = 1', 'append_only'))
+
 c = fresh(seed=False)
 check('reference roles exist', c.execute('select count(*) from roles').fetchone()[0] == 6)
 cols = [r for t in ('income_transactions', 'expense_transactions', 'ledger_entries', 'projects', 'bank_reconciliations') for r in c.execute(f'pragma table_info({t})')]
