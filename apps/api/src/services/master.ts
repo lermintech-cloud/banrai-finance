@@ -145,7 +145,7 @@ export async function addFund(db: D1Database, s: Session, body: Record<string, u
   const fid = id('f'), t = now.toISOString();
   const batch = [
     // Until the school confirms its fund types, new funds go under one neutral type.
-    db.prepare(`INSERT INTO fund_types (id, code, name) VALUES ('ft-general', 'GENERAL', 'ยังไม่จัดประเภท') ON CONFLICT DO NOTHING`),
+    stmt(db, 'INSERT OR IGNORE INTO fund_types (id, code, name) VALUES (?1, ?2, ?3)', ['ft-general', 'GENERAL', 'ยังไม่จัดประเภท']),
     stmt(db, `INSERT INTO fund_sources (id, fund_type_id, source_name, color, created_at) VALUES (?1, 'ft-general', ?2, ?3, ?4)`, [fid, name, COLORS[n % COLORS.length], t]),
     stmt(db, `INSERT INTO bank_accounts (id, fund_source_id, account_name, created_at) VALUES (?1, ?2, ?3, ?4)`, [id('b'), fid, 'บัญชี' + name, t]),
   ];

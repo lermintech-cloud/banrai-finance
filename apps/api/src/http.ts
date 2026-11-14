@@ -21,7 +21,9 @@ export function json(data: unknown, status = 200, extra: Record<string, string> 
 /**
  * Turns a database error into an HTTP error. The database enforces the money rules
  * (see database/migrations/0003_integrity.sql), so its error codes are part of the API contract.
- * Raw error text is never returned to the client.
+ * For unexpected (500) errors a short excerpt of the message is returned as `detail`, so a problem on a
+ * live deployment can be diagnosed from a screenshot. It holds SQL object names at most, never row data
+ * or credentials, and the caller is already past the session check for everything except login.
  */
 export function fromDbError(e: unknown): HttpError {
   if (e instanceof HttpError) return e;
@@ -35,11 +37,12 @@ export function fromDbError(e: unknown): HttpError {
   if (m.includes('UNIQUE constraint failed')) return new HttpError(409, 'duplicate');
   if (m.includes('FOREIGN KEY constraint failed')) return new HttpError(422, 'invalid_reference');
   if (m.includes('CHECK constraint failed') || m.includes('NOT NULL constraint failed')) return new HttpError(422, 'constraint_failed');
-  return new HttpError(500, 'internal');
+  return new HttpError(500, 'internal', m);
 }
 
 export function errorResponse(e: unknown): Response {
   const err = fromDbError(e);
   if (err.status >= 500) console.error('api_error', e instanceof Error ? e.message : String(e));
+  if (err.status >= 500) return json({ error: err.code, detail: String(e instanceof Error ? e.message : e).replace(/\s+/g, ' ').slice(0, 300) }, err.status);
   return json({ error: err.code }, err.status);
 }
