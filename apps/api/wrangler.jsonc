@@ -34,7 +34,7 @@
         {
           "binding": "DB",
           "database_name": "banrai_finance_prod",
-          "database_id": "REPLACE_WITH_PRODUCTION_DATABASE_ID",
+          "database_id": "47d013cc-eef1-482e-93e8-7ae6f4dda72e",
           "migrations_dir": "../../database/migrations"
         }
       ],
