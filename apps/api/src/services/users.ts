@@ -16,7 +16,7 @@ export async function listUsers(db: D1Database, s: Session) {
     .prepare(
       `SELECT u.id, u.username, u.full_name AS fullName, u.position, u.is_active AS active, u.must_change_password AS mustChange,
               (SELECT group_concat(r.role_key) FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = u.id) AS roleKeys
-         FROM users u ORDER BY u.username`,
+         FROM users u WHERE u.username NOT LIKE 'deleted-%' ORDER BY u.username`,
     )
     .all();
   const roles = await db.prepare('SELECT role_key AS key, role_name AS name, description FROM roles ORDER BY role_name').all();
@@ -75,4 +75,65 @@ export async function resetPassword(db: D1Database, s: Session, uid: string, bod
     audit(db, s, 'user.reset_password', uid, t),
   ]);
   return { id: uid };
+}
+
+/**
+ * Edit an account: full name, position and role. An administrator may correct their own name and position,
+ * but not their own role (so the last administrator cannot lock everyone out by accident).
+ */
+export async function updateUser(db: D1Database, s: Session, uid: string, body: Record<string, unknown>, now: Date) {
+  requirePerm(s, 'user_admin');
+  await target(db, uid);
+  const fullName = text(body.fullName, 'full_name', 1, 120);
+  const position = body.position == null || body.position === '' ? null : text(body.position, 'position', 1, 120);
+  const t = now.toISOString();
+  const batch = [stmt(db, 'UPDATE users SET full_name = ?2, position = ?3, updated_at = ?4 WHERE id = ?1', [uid, fullName, position, t])];
+  let roleKey: string | null = null;
+  if (typeof body.roleKey === 'string' && body.roleKey !== '') {
+    const role = await stmt(db, 'SELECT id FROM roles WHERE role_key = ?1', [body.roleKey]).first<{ id: string }>();
+    if (!role) throw new HttpError(422, 'invalid_role');
+    const cur = await stmt(db, 'SELECT r.role_key AS k FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = ?1', [uid]).all<{ k: string }>();
+    const same = cur.results.length === 1 && cur.results[0].k === body.roleKey;
+    if (!same) {
+      if (uid === s.userId) throw new HttpError(409, 'cannot_change_self');
+      roleKey = body.roleKey;
+      batch.push(stmt(db, 'DELETE FROM user_roles WHERE user_id = ?1', [uid]), stmt(db, 'INSERT INTO user_roles (user_id, role_id) VALUES (?1, ?2)', [uid, role.id]));
+    }
+  }
+  batch.push(audit(db, s, 'user.update', uid, t, { fullName, position, ...(roleKey ? { role: roleKey } : {}) }));
+  await db.batch(batch);
+  return { id: uid };
+}
+
+/**
+ * Delete an account. One that was never used (no sign-in, no transactions, nothing in the audit log) is removed.
+ * One that was used must stay for the history, so it is retired instead: signed out, unable to sign in, its roles
+ * removed, its username freed for reuse and hidden from the list. Its name still shows in the audit trail.
+ */
+export async function deleteUser(db: D1Database, s: Session, uid: string, now: Date) {
+  requirePerm(s, 'user_admin');
+  const u = await target(db, uid);
+  if (u.id === s.userId) throw new HttpError(409, 'cannot_change_self');
+  const t = now.toISOString();
+  try {
+    await db.batch([
+      stmt(db, 'DELETE FROM sessions WHERE user_id = ?1', [uid]),
+      stmt(db, 'DELETE FROM user_roles WHERE user_id = ?1', [uid]),
+      stmt(db, 'DELETE FROM login_attempts WHERE username_key = ?1', [u.username.toLowerCase()]),
+      stmt(db, 'DELETE FROM users WHERE id = ?1', [uid]),
+      audit(db, s, 'user.delete', uid, t, { username: u.username, mode: 'deleted' }),
+    ]);
+    return { id: uid, mode: 'deleted' };
+  } catch (e) {
+    const m = e instanceof Error ? e.message : String(e);
+    if (!m.includes('FOREIGN KEY')) throw e;
+  }
+  await db.batch([
+    stmt(db, `UPDATE users SET is_active = 0, password_hash = 'RETIRED', username = 'deleted-' || substr(id, 1, 30), updated_at = ?2 WHERE id = ?1`, [uid, t]),
+    stmt(db, 'UPDATE sessions SET revoked_at = ?2 WHERE user_id = ?1 AND revoked_at IS NULL', [uid, t]),
+    stmt(db, 'DELETE FROM user_roles WHERE user_id = ?1', [uid]),
+    stmt(db, 'DELETE FROM login_attempts WHERE username_key = ?1', [u.username.toLowerCase()]),
+    audit(db, s, 'user.delete', uid, t, { username: u.username, mode: 'retired' }),
+  ]);
+  return { id: uid, mode: 'retired' };
 }

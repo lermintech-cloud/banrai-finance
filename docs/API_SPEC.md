@@ -23,6 +23,8 @@ Worker: `apps/api/src/index.ts` ทุกเส้นทางใต้ `/api/` 
 | POST | `/api/users` | `user_admin` | `{username,fullName,position?,roleKey,password}` รหัสชั่วคราว ต้องเปลี่ยนเมื่อเข้าครั้งแรก |
 | POST | `/api/users/:id/enable` `/disable` | `user_admin` | เปิด/ปิดบัญชี (ปิดแล้วเซสชันถูกเพิกถอน) ทำกับตนเองไม่ได้ |
 | POST | `/api/users/:id/password` | `user_admin` | ตั้งรหัสชั่วคราวใหม่ |
+| POST | `/api/users/:id/update` | `user_admin` | `{fullName, position, roleKey}` แก้ชื่อ ตำแหน่ง บทบาท (บทบาทของตนเองเปลี่ยนไม่ได้ → 409 `cannot_change_self`) |
+| POST | `/api/users/:id/delete` | `user_admin` | ไม่เคยใช้งาน → ลบจริง (`mode: deleted`); เคยใช้งาน → ปลดออก (`mode: retired`): เข้าไม่ได้ ไม่แสดงในรายชื่อ ชื่อผู้ใช้ว่างให้ตั้งใหม่ ประวัติยังอยู่ |
 
 รหัสผ่าน: 10-128 ตัวอักษร ไม่มีชื่อผู้ใช้อยู่ข้างใน เก็บเป็น `pbkdf2-sha256$100000$salt$hash`
 

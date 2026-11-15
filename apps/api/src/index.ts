@@ -3,7 +3,7 @@ import { assertSameOrigin, getSession, requirePerm, sessionCookie } from './midd
 import { auditLogs, fundSummary, integrityIssues, listTransactions } from './repositories/reports.ts';
 import { SESSION_HOURS, changePassword, login, logout, me } from './services/auth.ts';
 import { addFund, addProject, closeFiscalYear, createFiscalYear, deleteCrest, getCrest, putCrest, reconcile, renameFund, saveSettings, state, updateFund, deleteFund } from './services/master.ts';
-import { createUser, listUsers, resetPassword, setActive } from './services/users.ts';
+import { createUser, deleteUser, listUsers, resetPassword, setActive, updateUser } from './services/users.ts';
 import { advance, createTransaction, idempotencyKey, post, reverse } from './services/workflow.ts';
 import type { Env, Kind } from './types.ts';
 
@@ -115,6 +115,8 @@ async function route(req: Request, env: Env, now: Date): Promise<Response> {
     if (path === '/api/users') return json(await createUser(env.DB, session, await readJson(req), now), 201);
     if ((m = path.match(new RegExp(`^/api/users/${ID}/(enable|disable)$`)))) return json(await setActive(env.DB, session, m[1], m[2] === 'enable', now));
     if ((m = path.match(new RegExp(`^/api/users/${ID}/password$`)))) return json(await resetPassword(env.DB, session, m[1], await readJson(req), now));
+    if ((m = path.match(new RegExp(`^/api/users/${ID}/update$`)))) return json(await updateUser(env.DB, session, m[1], await readJson(req), now));
+    if ((m = path.match(new RegExp(`^/api/users/${ID}/delete$`)))) return json(await deleteUser(env.DB, session, m[1], now));
     if (path === '/api/fiscal-years') return json(await createFiscalYear(env.DB, session, await readJson(req), now), 201);
     if ((m = path.match(new RegExp(`^/api/fiscal-years/${ID}/close$`)))) return json(await closeFiscalYear(env.DB, session, m[1], now));
     if (path === '/api/funds') return json(await addFund(env.DB, session, await readJson(req), now), 201);

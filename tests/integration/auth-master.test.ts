@@ -251,6 +251,40 @@ test('funds: edit opening balance and delete only while unused; the administrato
   for (const x of ['fund.opening', 'fund.delete', 'fund.rename']) assert.ok(actions.includes(x), x);
 });
 
+test('users: the administrator edits accounts and deletes them (unused -> removed, used -> retired)', async () => {
+  const c = fresh();
+  await all(c);
+  const list = async () => (await call(c, 'admin', 'GET', '/api/users')).body.users as any[];
+  const fin = (await list()).find((u) => u.username === 'dev.finance');
+  // edit name, position and role
+  assert.equal((await call(c, 'fin', 'POST', `/api/users/${fin.id}/update`, { fullName: 'x', roleKey: 'director' })).status, 403);
+  const up = await call(c, 'admin', 'POST', `/api/users/${fin.id}/update`, { fullName: 'นายสมชาย ใจดี', position: 'ครู', roleKey: 'accountant' });
+  assert.equal(up.status, 200, JSON.stringify(up.body));
+  let u = (await list()).find((x) => x.id === fin.id);
+  assert.deepEqual([u.fullName, u.position, u.roleKeys], ['นายสมชาย ใจดี', 'ครู', ['accountant']]);
+  assert.ok((await call(c, 'fin', 'GET', '/api/state')).body.me.permissions.includes('review'), 'new role applies at once');
+  assert.equal((await call(c, 'admin', 'POST', `/api/users/${fin.id}/update`, { fullName: 'x', roleKey: 'nope' })).status, 422);
+  // own account: name yes, role no
+  const me = (await list()).find((x) => x.username === 'dev.admin');
+  assert.equal((await call(c, 'admin', 'POST', `/api/users/${me.id}/update`, { fullName: 'ผู้ดูแล ใหม่', roleKey: 'super_admin' })).status, 200);
+  assert.equal((await call(c, 'admin', 'POST', `/api/users/${me.id}/update`, { fullName: 'ผู้ดูแล ใหม่', roleKey: 'auditor' })).body.error, 'cannot_change_self');
+  assert.equal((await call(c, 'admin', 'POST', `/api/users/${me.id}/delete`)).body.error, 'cannot_change_self');
+  // a never-used account is removed outright
+  const nu = await call(c, 'admin', 'POST', '/api/users', { username: 'temp.user', fullName: 'ทดลอง', roleKey: 'auditor', password: 'Temp-password-123' });
+  assert.equal(nu.status, 201);
+  assert.equal((await call(c, 'admin', 'POST', `/api/users/${nu.body.id}/delete`)).body.mode, 'deleted');
+  assert.equal(c.raw.prepare('SELECT COUNT(*) n FROM users WHERE id = ?1').get(nu.body.id)!.n, 0);
+  // a used account (signed in, has transactions) is retired: hidden, signed out, cannot sign in, username free
+  const del = await call(c, 'admin', 'POST', `/api/users/${fin.id}/delete`);
+  assert.deepEqual([del.status, del.body.mode], [200, 'retired'], JSON.stringify(del.body));
+  assert.ok(!(await list()).some((x) => x.id === fin.id));
+  assert.equal((await call(c, 'fin', 'GET', '/api/state')).status, 401);
+  assert.equal((await signIn(c, 'fin2', 'dev.finance')).status, 401);
+  assert.equal((await call(c, 'admin', 'POST', '/api/users', { username: 'dev.finance', fullName: 'คนใหม่', roleKey: 'finance', password: 'Temp-password-123' })).status, 201);
+  assert.ok(c.raw.prepare('SELECT COUNT(*) n FROM audit_logs WHERE user_id = ?1').get(fin.id)!.n > 0, 'history kept');
+  assert.deepEqual(c.raw.prepare('SELECT * FROM v_integrity_issues').all(), []);
+});
+
 test('fiscal years: create, refuse closing with open items, close blocks new postings', async () => {
   const c = fresh(false);
   await signIn(c, 'admin', 'dev.admin');

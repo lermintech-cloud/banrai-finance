@@ -16,7 +16,7 @@ const ACTION_TH: Record<string, string> = {
   'income.create': 'สร้างรายการรับ (ร่าง)', 'income.submit': 'ส่งรายการรับ', 'income.confirm': 'ยืนยันรับเงิน', 'income.reject': 'ไม่อนุมัติรายการรับ', 'income.reverse': 'กลับรายการรับ',
   'expense.create': 'สร้างคำขอเบิก (ร่าง)', 'expense.submit': 'ส่งตรวจ', 'expense.review': 'ตรวจผ่าน', 'expense.approve': 'อนุมัติ', 'expense.reject': 'ไม่อนุมัติ', 'expense.pay': 'บันทึกจ่าย', 'expense.reverse': 'กลับรายการจ่าย',
   'auth.login': 'เข้าสู่ระบบ', 'auth.logout': 'ออกจากระบบ', 'auth.login_failed': 'เข้าสู่ระบบไม่สำเร็จ', 'auth.locked': 'บัญชีถูกล็อกชั่วคราว', 'auth.password_changed': 'เปลี่ยนรหัสผ่าน',
-  'user.create': 'เพิ่มผู้ใช้', 'user.enable': 'เปิดใช้บัญชี', 'user.disable': 'ปิดบัญชี', 'user.reset_password': 'ตั้งรหัสผ่านใหม่ให้ผู้ใช้',
+  'user.create': 'เพิ่มผู้ใช้', 'user.update': 'แก้ไขบัญชีผู้ใช้', 'user.delete': 'ลบบัญชีผู้ใช้', 'user.enable': 'เปิดใช้บัญชี', 'user.disable': 'ปิดบัญชี', 'user.reset_password': 'ตั้งรหัสผ่านใหม่ให้ผู้ใช้',
   'settings.update': 'แก้ไขตั้งค่าเอกสาร', 'settings.crest': 'เปลี่ยนตราครุฑ', 'settings.crest_delete': 'ลบตราครุฑ',
   'fund.create': 'เพิ่มแหล่งเงิน', 'fund.rename': 'แก้ชื่อแหล่งเงิน', 'fund.opening': 'แก้ยอดยกมา', 'fund.delete': 'ลบแหล่งเงิน', 'project.create': 'เพิ่มโครงการ', 'bank.reconcile': 'บันทึกยอดสมุดบัญชี',
   'fiscal_year.create': 'เปิดปีงบประมาณ', 'fiscal_year.close': 'ปิดปีงบประมาณ',
