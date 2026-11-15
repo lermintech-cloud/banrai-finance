@@ -50,7 +50,10 @@ export async function state(db: D1Database, s: Session, now: Date) {
   if (!fy) return { ...base, funds: [], projects: [], banks: [], inc: [], exp: [], led: [], log: [] };
   const all = async (sql: string, p: unknown[] = []) => (await (p.length ? stmt(db, sql, p) : db.prepare(sql)).all<Record<string, any>>()).results;
   const funds = await all(`SELECT id, source_name AS name, color AS c FROM fund_sources WHERE is_active = 1 ORDER BY created_at, id`);
-  const projects = await all(`SELECT id, fund_source_id AS fund, project_name AS name, budget_amount_satang AS bs, department AS dept, owner_name AS owner, period_text AS period FROM projects WHERE fiscal_year_id = ?1 ORDER BY project_code`, [fy.id]);
+  // Plan columns come from migration 0010. Until it is applied, still load everything (without plan details)
+  // so nobody is locked out of the system.
+  const projects = await all(`SELECT id, fund_source_id AS fund, project_name AS name, budget_amount_satang AS bs, department AS dept, owner_name AS owner, period_text AS period FROM projects WHERE fiscal_year_id = ?1 ORDER BY project_code`, [fy.id])
+    .catch(() => all(`SELECT id, fund_source_id AS fund, project_name AS name, budget_amount_satang AS bs FROM projects WHERE fiscal_year_id = ?1 ORDER BY project_code`, [fy.id]));
   const banks = await all(
     `SELECT b.id, b.fund_source_id AS fund, b.account_name AS name,
             (SELECT r.statement_balance_satang FROM bank_reconciliations r WHERE r.bank_account_id = b.id ORDER BY r.created_at DESC, r.id DESC LIMIT 1) AS stmt,
@@ -263,6 +266,7 @@ function projectFields(body: Record<string, unknown>) {
 export async function addProject(db: D1Database, s: Session, body: Record<string, unknown>, now: Date) {
   requirePerm(s, 'proj');
   const v = projectFields(body);
+  await needPlanColumns(db);
   const fy = await currentYear(db, now);
   if (!fy || fy.status !== 'open') throw new HttpError(409, 'no_open_fiscal_year');
   if (await stmt(db, 'SELECT 1 AS x FROM projects WHERE fiscal_year_id = ?1 AND project_name = ?2', [fy.id, v.name]).first()) throw new HttpError(409, 'duplicate');
@@ -273,6 +277,11 @@ export async function addProject(db: D1Database, s: Session, body: Record<string
     audit(db, s, 'project.create', 'project', pid, t, { name: v.name, budget_satang: v.budget, department: v.dept }),
   ]);
   return { id: pid };
+}
+
+async function needPlanColumns(db: D1Database) {
+  const r = await db.prepare(`SELECT COUNT(*) AS n FROM pragma_table_info('projects') WHERE name = 'department'`).first<{ n: number }>();
+  if (!r?.n) throw new HttpError(409, 'migration_required');
 }
 
 type ProjRow = { id: string; fy: string; fund: string; name: string; bs: number; status: string; used: number };
@@ -293,6 +302,7 @@ export async function updateProject(db: D1Database, s: Session, pid: string, bod
   requirePerm(s, 'proj');
   const p = await projectFor(db, pid);
   const v = projectFields(body);
+  await needPlanColumns(db);
   if (v.fund !== p.fund && p.used > 0) throw new HttpError(409, 'project_in_use');
   if (await stmt(db, 'SELECT 1 AS x FROM projects WHERE fiscal_year_id = ?1 AND project_name = ?2 AND id <> ?3', [p.fy, v.name, pid]).first()) throw new HttpError(409, 'duplicate');
   const t = now.toISOString();

@@ -239,6 +239,17 @@ test('annual project plan: details, edit, delete only while unused', async () =>
   assert.deepEqual(c.raw.prepare('SELECT * FROM v_integrity_issues').all(), []);
 });
 
+test('before migration 0010 is applied everyone can still sign in and load data', async () => {
+  const c = fresh();
+  await all(c);
+  for (const col of ['department', 'owner_name', 'period_text']) c.raw.exec(`ALTER TABLE projects DROP COLUMN ${col}`);
+  const st = await call(c, 'fin', 'GET', '/api/state');
+  assert.equal(st.status, 200, JSON.stringify(st.body));
+  assert.ok(st.body.projects.length > 0);
+  const r = await call(c, 'fin', 'POST', '/api/projects', { name: 'ใหม่', fundSourceId: 'f1', budget: '100' });
+  assert.deepEqual([r.status, r.body.error], [409, 'migration_required']);
+});
+
 test('funds: edit opening balance and delete only while unused; the administrator acts in every role', async () => {
   const c = fresh();
   await all(c);
