@@ -18,7 +18,7 @@ const ACTION_TH: Record<string, string> = {
   'auth.login': 'เข้าสู่ระบบ', 'auth.logout': 'ออกจากระบบ', 'auth.login_failed': 'เข้าสู่ระบบไม่สำเร็จ', 'auth.locked': 'บัญชีถูกล็อกชั่วคราว', 'auth.password_changed': 'เปลี่ยนรหัสผ่าน',
   'user.create': 'เพิ่มผู้ใช้', 'user.enable': 'เปิดใช้บัญชี', 'user.disable': 'ปิดบัญชี', 'user.reset_password': 'ตั้งรหัสผ่านใหม่ให้ผู้ใช้',
   'settings.update': 'แก้ไขตั้งค่าเอกสาร', 'settings.crest': 'เปลี่ยนตราครุฑ', 'settings.crest_delete': 'ลบตราครุฑ',
-  'fund.create': 'เพิ่มแหล่งเงิน', 'fund.rename': 'แก้ชื่อแหล่งเงิน', 'project.create': 'เพิ่มโครงการ', 'bank.reconcile': 'บันทึกยอดสมุดบัญชี',
+  'fund.create': 'เพิ่มแหล่งเงิน', 'fund.rename': 'แก้ชื่อแหล่งเงิน', 'fund.opening': 'แก้ยอดยกมา', 'fund.delete': 'ลบแหล่งเงิน', 'project.create': 'เพิ่มโครงการ', 'bank.reconcile': 'บันทึกยอดสมุดบัญชี',
   'fiscal_year.create': 'เปิดปีงบประมาณ', 'fiscal_year.close': 'ปิดปีงบประมาณ',
 };
 
@@ -63,11 +63,11 @@ export async function state(db: D1Database, s: Session, now: Date) {
   const exp = await all(
     `SELECT id, fund_source_id AS fund, transaction_date AS date, payee_name AS party, description AS "desc", amount_satang AS amt, payment_method AS method, COALESCE(project_id, '') AS proj, status, created_by AS "by", voucher_number AS no
        FROM expense_transactions WHERE fiscal_year_id = ?1 AND status <> 'cancelled' ORDER BY transaction_date DESC, id DESC LIMIT 3000`, [fy.id]);
-  const bf = await all(`SELECT fund_source_id AS fund, SUM(amount_satang) AS amt FROM ledger_entries WHERE entry_date < ?1 GROUP BY fund_source_id HAVING SUM(amount_satang) <> 0`, [fy.start_date]);
+  const bf = await all(`SELECT fund_source_id AS fund, SUM(amount_satang) AS amt FROM ledger_entries WHERE entry_date < ?1 AND fund_source_id IN (SELECT id FROM fund_sources WHERE is_active = 1) GROUP BY fund_source_id HAVING SUM(amount_satang) <> 0`, [fy.start_date]);
   const cur = await all(
     `SELECT id, entry_date AS date, fund_source_id AS fund, amount_satang AS amt, COALESCE(ref_no, '') AS ref, description AS "desc",
-            CASE WHEN kind = 'opening' THEN 'open' WHEN source_type = 'income' THEN 'inc' WHEN source_type = 'expense' THEN 'exp' WHEN amount_satang >= 0 THEN 'inc' ELSE 'exp' END AS kind
-       FROM ledger_entries WHERE entry_date >= ?1 ORDER BY entry_date, created_at, id LIMIT 8000`, [fy.start_date]);
+            CASE WHEN kind = 'opening' OR (kind = 'adjustment' AND ref_no = 'ปรับยอดยกมา') THEN 'open' WHEN source_type = 'income' THEN 'inc' WHEN source_type = 'expense' THEN 'exp' WHEN amount_satang >= 0 THEN 'inc' ELSE 'exp' END AS kind
+       FROM ledger_entries WHERE entry_date >= ?1 AND fund_source_id IN (SELECT id FROM fund_sources WHERE is_active = 1) ORDER BY entry_date, created_at, id LIMIT 8000`, [fy.start_date]);
   const led = [...bf.map((r) => ({ id: 'bf-' + r.fund, date: fy.start_date, fund: r.fund, amt: r.amt, ref: 'ยกมา', desc: 'ยอดยกมาจากปีก่อน', kind: 'open' })), ...cur];
   const log = s.permissions.has('audit_read')
     ? (await all(
@@ -162,6 +162,90 @@ export async function renameFund(db: D1Database, s: Session, fid: string, body: 
   const r = await db.batch([stmt(db, 'UPDATE fund_sources SET source_name = ?2 WHERE id = ?1', [fid, name]), audit(db, s, 'fund.rename', 'fund', fid, now.toISOString(), { name })]);
   if (r[0].meta.changes !== 1) throw new HttpError(404, 'not_found');
   return { id: fid };
+}
+
+/** Opening balance changes are booked as ledger adjustments with this reference; the ledger itself is append-only. */
+const OPEN_ADJ = 'ปรับยอดยกมา';
+
+/**
+ * How a fund is used. `used` counts everything except this year's opening balance (and its adjustments):
+ * transactions, projects, bank reconciliations and any ledger row of another fiscal year.
+ */
+async function fundUsage(db: D1Database, fid: string, fyId: string | null) {
+  return (await stmt(db, `SELECT
+      (SELECT COUNT(*) FROM income_transactions WHERE fund_source_id = ?1)
+    + (SELECT COUNT(*) FROM expense_transactions WHERE fund_source_id = ?1)
+    + (SELECT COUNT(*) FROM projects WHERE fund_source_id = ?1)
+    + (SELECT COUNT(*) FROM bank_reconciliations r JOIN bank_accounts b ON b.id = r.bank_account_id WHERE b.fund_source_id = ?1)
+    + (SELECT COUNT(*) FROM ledger_entries WHERE fund_source_id = ?1
+          AND NOT (fiscal_year_id IS ?2 AND (kind = 'opening' OR (kind = 'adjustment' AND ref_no = ?3)))) AS used,
+      (SELECT COALESCE(SUM(amount_satang), 0) FROM ledger_entries WHERE fund_source_id = ?1
+          AND fiscal_year_id IS ?2 AND (kind = 'opening' OR (kind = 'adjustment' AND ref_no = ?3))) AS opening,
+      (SELECT COUNT(*) FROM ledger_entries WHERE fund_source_id = ?1) AS rows`, [fid, fyId, OPEN_ADJ]).first<{ used: number; opening: number; rows: number }>())!;
+}
+
+const openingAdjustment = (db: D1Database, s: Session, fy: { id: string; start_date: string }, fid: string, diff: number, why: string, t: string) =>
+  stmt(db, `INSERT INTO ledger_entries (id, fiscal_year_id, fund_source_id, entry_date, amount_satang, kind, ref_no, description, idempotency_key, created_by, created_at)
+            VALUES (?1, ?2, ?3, ?4, ?5, 'adjustment', ?6, ?7, ?8, ?9, ?10)`, [id('led'), fy.id, fid, fy.start_date, diff, OPEN_ADJ, why, 'adj-' + crypto.randomUUID(), s.userId, t]);
+
+/**
+ * Edit a fund: name, and this year's opening balance. The opening balance can be changed while the fund has no
+ * other use; after that only a system administrator (user_admin) may change it. Every change is in the audit log.
+ */
+export async function updateFund(db: D1Database, s: Session, fid: string, body: Record<string, unknown>, now: Date) {
+  requirePerm(s, 'setup');
+  const f = await stmt(db, 'SELECT source_name AS name FROM fund_sources WHERE id = ?1 AND is_active = 1', [fid]).first<{ name: string }>();
+  if (!f) throw new HttpError(404, 'not_found');
+  const name = text(body.name, 'name', 1, 80), t = now.toISOString();
+  const batch: D1PreparedStatement[] = [];
+  if (name !== f.name) batch.push(stmt(db, 'UPDATE fund_sources SET source_name = ?2 WHERE id = ?1', [fid, name]), audit(db, s, 'fund.rename', 'fund', fid, t, { from: f.name, name }));
+  if (body.opening !== undefined && body.opening !== null && body.opening !== '') {
+    const want = bahtToSatangOrZero(body.opening);
+    const fy = await currentYear(db, now);
+    if (!fy || fy.status !== 'open') throw new HttpError(409, 'no_open_fiscal_year');
+    const u = await fundUsage(db, fid, fy.id);
+    const diff = want - u.opening;
+    if (diff !== 0) {
+      if (u.used > 0 && !s.permissions.has('user_admin')) throw new HttpError(409, 'fund_in_use');
+      batch.push(openingAdjustment(db, s, fy, fid, diff, 'ปรับยอดยกมา', t), audit(db, s, 'fund.opening', 'fund', fid, t, { from_satang: u.opening, to_satang: want }));
+    }
+  }
+  if (batch.length) await db.batch(batch);
+  return { id: fid, changed: batch.length > 0 };
+}
+
+/**
+ * Delete a fund that has never been used. With no ledger rows at all it is removed outright; if it only has an
+ * opening balance, that balance is brought to zero by an adjustment and the fund is archived (hidden, kept in
+ * history), because the ledger is append-only. A fund with transactions, projects or reconciliations cannot go.
+ */
+export async function deleteFund(db: D1Database, s: Session, fid: string, now: Date) {
+  requirePerm(s, 'setup');
+  const f = await stmt(db, 'SELECT source_name AS name FROM fund_sources WHERE id = ?1 AND is_active = 1', [fid]).first<{ name: string }>();
+  if (!f) throw new HttpError(404, 'not_found');
+  const fy = await currentYear(db, now);
+  const u = await fundUsage(db, fid, fy?.id ?? null);
+  if (u.used > 0) throw new HttpError(409, 'fund_in_use');
+  const t = now.toISOString();
+  if (u.rows === 0) {
+    await db.batch([
+      stmt(db, 'DELETE FROM bank_accounts WHERE fund_source_id = ?1', [fid]),
+      stmt(db, 'DELETE FROM fund_sources WHERE id = ?1', [fid]),
+      audit(db, s, 'fund.delete', 'fund', fid, t, { name: f.name, mode: 'deleted' }),
+    ]);
+    return { id: fid, mode: 'deleted' };
+  }
+  if (!fy || fy.status !== 'open') throw new HttpError(409, 'no_open_fiscal_year');
+  const batch: D1PreparedStatement[] = [];
+  if (u.opening !== 0) batch.push(openingAdjustment(db, s, fy, fid, -u.opening, 'ปรับยอดยกมาเป็นศูนย์ (ลบแหล่งเงิน)', t));
+  batch.push(
+    // The name stays unique so the same name can be used again for a new fund.
+    stmt(db, `UPDATE fund_sources SET is_active = 0, source_name = substr(source_name, 1, 80) || ' (ลบแล้ว ' || ?2 || ')' WHERE id = ?1`, [fid, t.slice(0, 19)]),
+    stmt(db, 'UPDATE bank_accounts SET is_active = 0 WHERE fund_source_id = ?1', [fid]),
+    audit(db, s, 'fund.delete', 'fund', fid, t, { name: f.name, mode: 'archived', opening_cleared_satang: u.opening }),
+  );
+  await db.batch(batch);
+  return { id: fid, mode: 'archived' };
 }
 
 export async function addProject(db: D1Database, s: Session, body: Record<string, unknown>, now: Date) {

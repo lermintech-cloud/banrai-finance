@@ -211,6 +211,46 @@ test('funds, projects, bank reconciliation', async () => {
   assert.deepEqual(c.raw.prepare('SELECT * FROM v_integrity_issues').all(), []);
 });
 
+test('funds: edit opening balance and delete only while unused; the administrator acts in every role', async () => {
+  const c = fresh();
+  await all(c);
+  const bal = (id: string) => Number(c.raw.prepare('SELECT balance_satang b FROM v_fund_summary WHERE fund_source_id = ?1').get(id)!.b);
+  // A fund with an opening balance and nothing else: opening can be edited, then it can be deleted (archived).
+  const a = (await call(c, 'dir', 'POST', '/api/funds', { name: 'ทดลอง', opening: '500' })).body.id;
+  assert.equal((await call(c, 'fin', 'POST', `/api/funds/${a}/update`, { name: 'ทดลอง', opening: '700' })).status, 403);
+  const up = await call(c, 'dir', 'POST', `/api/funds/${a}/update`, { name: 'ทดลอง 2', opening: '700.25' });
+  assert.deepEqual([up.status, up.body.changed], [200, true], JSON.stringify(up.body));
+  assert.equal(bal(a), 70025);
+  let st = (await call(c, 'fin', 'GET', '/api/state')).body;
+  assert.equal(st.funds.find((f: any) => f.id === a).name, 'ทดลอง 2');
+  assert.equal(st.led.filter((l: any) => l.fund === a && l.kind === 'open').reduce((x: number, l: any) => x + l.amt, 0), 70025);
+  assert.equal((await call(c, 'fin', 'POST', `/api/funds/${a}/delete`)).status, 403);
+  const del = await call(c, 'dir', 'POST', `/api/funds/${a}/delete`);
+  assert.deepEqual([del.status, del.body.mode], [200, 'archived'], JSON.stringify(del.body));
+  assert.equal(bal(a), 0);
+  st = (await call(c, 'fin', 'GET', '/api/state')).body;
+  assert.ok(!st.funds.some((f: any) => f.id === a) && !st.banks.some((b: any) => b.fund === a) && !st.led.some((l: any) => l.fund === a));
+  assert.equal((await call(c, 'dir', 'POST', '/api/funds', { name: 'ทดลอง 2', opening: '0' })).status, 201, 'the name is free again');
+  // A fund with no ledger rows at all is removed outright.
+  const b = (await call(c, 'dir', 'POST', '/api/funds', { name: 'ว่าง', opening: '0' })).body.id;
+  assert.equal((await call(c, 'dir', 'POST', `/api/funds/${b}/delete`)).body.mode, 'deleted');
+  assert.equal(c.raw.prepare('SELECT COUNT(*) n FROM fund_sources WHERE id = ?1').get(b)!.n, 0);
+  // A used fund (seed fund f1 has transactions) cannot be deleted; its opening is locked for the director but not for the administrator.
+  assert.equal((await call(c, 'dir', 'POST', '/api/funds/f1/delete')).status, 409);
+  assert.equal((await call(c, 'dir', 'POST', '/api/funds/f1/delete')).body.error, 'fund_in_use');
+  const before = bal('f1');
+  const open1 = Number(c.raw.prepare(`SELECT COALESCE(SUM(amount_satang),0) n FROM ledger_entries WHERE fund_source_id = 'f1' AND kind = 'opening'`).get()!.n);
+  assert.equal((await call(c, 'dir', 'POST', '/api/funds/f1/update', { name: 'เงินอุดหนุนรายหัว', opening: String(open1 / 100 + 1) })).body.error, 'fund_in_use');
+  assert.equal((await call(c, 'admin', 'POST', '/api/funds/f1/update', { name: c.raw.prepare(`SELECT source_name n FROM fund_sources WHERE id = 'f1'`).get()!.n, opening: String(open1 / 100 + 1) })).status, 200);
+  assert.equal(bal('f1'), before + 100);
+  // The administrator now holds every permission, but still cannot approve what they created themselves.
+  const me = (await call(c, 'admin', 'GET', '/api/state')).body.me;
+  for (const p of ['create', 'pay', 'review', 'confirm', 'reverse', 'approve', 'setup', 'user_admin']) assert.ok(me.permissions.includes(p), p);
+  assert.deepEqual(c.raw.prepare('SELECT * FROM v_integrity_issues').all(), []);
+  const actions = (c.raw.prepare(`SELECT action FROM audit_logs WHERE entity_type = 'fund'`).all() as any[]).map((r) => r.action);
+  for (const x of ['fund.opening', 'fund.delete', 'fund.rename']) assert.ok(actions.includes(x), x);
+});
+
 test('fiscal years: create, refuse closing with open items, close blocks new postings', async () => {
   const c = fresh(false);
   await signIn(c, 'admin', 'dev.admin');

@@ -2,7 +2,7 @@ import { HttpError, errorResponse, json } from './http.ts';
 import { assertSameOrigin, getSession, requirePerm, sessionCookie } from './middleware/auth.ts';
 import { auditLogs, fundSummary, integrityIssues, listTransactions } from './repositories/reports.ts';
 import { SESSION_HOURS, changePassword, login, logout, me } from './services/auth.ts';
-import { addFund, addProject, closeFiscalYear, createFiscalYear, deleteCrest, getCrest, putCrest, reconcile, renameFund, saveSettings, state } from './services/master.ts';
+import { addFund, addProject, closeFiscalYear, createFiscalYear, deleteCrest, getCrest, putCrest, reconcile, renameFund, saveSettings, state, updateFund, deleteFund } from './services/master.ts';
 import { createUser, listUsers, resetPassword, setActive } from './services/users.ts';
 import { advance, createTransaction, idempotencyKey, post, reverse } from './services/workflow.ts';
 import type { Env, Kind } from './types.ts';
@@ -119,6 +119,8 @@ async function route(req: Request, env: Env, now: Date): Promise<Response> {
     if ((m = path.match(new RegExp(`^/api/fiscal-years/${ID}/close$`)))) return json(await closeFiscalYear(env.DB, session, m[1], now));
     if (path === '/api/funds') return json(await addFund(env.DB, session, await readJson(req), now), 201);
     if ((m = path.match(new RegExp(`^/api/funds/${ID}/rename$`)))) return json(await renameFund(env.DB, session, m[1], await readJson(req), now));
+    if ((m = path.match(new RegExp(`^/api/funds/${ID}/update$`)))) return json(await updateFund(env.DB, session, m[1], await readJson(req), now));
+    if ((m = path.match(new RegExp(`^/api/funds/${ID}/delete$`)))) return json(await deleteFund(env.DB, session, m[1], now));
     if (path === '/api/projects') return json(await addProject(env.DB, session, await readJson(req), now), 201);
     if ((m = path.match(new RegExp(`^/api/banks/${ID}/reconcile$`)))) return json(await reconcile(env.DB, session, m[1], await readJson(req), now), 201);
 
