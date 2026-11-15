@@ -40,7 +40,9 @@ Worker: `apps/api/src/index.ts` ทุกเส้นทางใต้ `/api/` 
 | POST | `/api/funds/:id/rename` | `setup` | แก้ชื่อ |
 | POST | `/api/funds/:id/update` | `setup` | แก้ชื่อ และยอดยกมาของปีงบปัจจุบัน `{name, opening?}` — ยอดยกมาแก้ได้เมื่อแหล่งเงินยังไม่มีรายการ ผู้มีสิทธิ์ `user_admin` แก้ได้เสมอ บันทึกเป็นรายการปรับปรุง (`adjustment`, ref `ปรับยอดยกมา`) เพราะทะเบียนคุมแก้/ลบไม่ได้; ใช้แล้ว → 409 `fund_in_use` |
 | POST | `/api/funds/:id/delete` | `setup` | ลบแหล่งเงินที่ยังไม่มีรายการ: ไม่มีแถวในทะเบียนคุมเลย → ลบจริง (`mode: deleted`); มีแค่ยอดยกมา → ปรับยอดเป็นศูนย์แล้วซ่อน (`mode: archived`); ใช้แล้ว → 409 `fund_in_use` |
-| POST | `/api/projects` | `proj` | `{name,fundSourceId,budget}` |
+| POST | `/api/projects` | `proj` | `{name,fundSourceId,budget,department?,owner?,period?}` |
+| POST | `/api/projects/:id/update` | `proj` | same body; fund change → 409 `project_in_use` once any expense uses the project |
+| POST | `/api/projects/:id/delete` | `proj` | 409 `project_in_use` once any expense uses the project |
 | POST | `/api/banks/:id/reconcile` | `review` | `{amount}` บันทึกยอดตามสมุดบัญชี (ไม่ปรับทะเบียนคุมเอง) |
 
 ยอดของปีก่อนหน้าปีงบปัจจุบันถูกรวมเป็นแถว "ยอดยกมาจากปีก่อน" ต่อแหล่งเงินใน `/api/state`

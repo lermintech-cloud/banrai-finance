@@ -18,7 +18,7 @@ const ACTION_TH: Record<string, string> = {
   'auth.login': 'เข้าสู่ระบบ', 'auth.logout': 'ออกจากระบบ', 'auth.login_failed': 'เข้าสู่ระบบไม่สำเร็จ', 'auth.locked': 'บัญชีถูกล็อกชั่วคราว', 'auth.password_changed': 'เปลี่ยนรหัสผ่าน',
   'user.create': 'เพิ่มผู้ใช้', 'user.update': 'แก้ไขบัญชีผู้ใช้', 'user.delete': 'ลบบัญชีผู้ใช้', 'user.enable': 'เปิดใช้บัญชี', 'user.disable': 'ปิดบัญชี', 'user.reset_password': 'ตั้งรหัสผ่านใหม่ให้ผู้ใช้',
   'settings.update': 'แก้ไขตั้งค่าเอกสาร', 'settings.crest': 'เปลี่ยนตราครุฑ', 'settings.crest_delete': 'ลบตราครุฑ',
-  'fund.create': 'เพิ่มแหล่งเงิน', 'fund.rename': 'แก้ชื่อแหล่งเงิน', 'fund.opening': 'แก้ยอดยกมา', 'fund.delete': 'ลบแหล่งเงิน', 'project.create': 'เพิ่มโครงการ', 'bank.reconcile': 'บันทึกยอดสมุดบัญชี',
+  'fund.create': 'เพิ่มแหล่งเงิน', 'fund.rename': 'แก้ชื่อแหล่งเงิน', 'fund.opening': 'แก้ยอดยกมา', 'fund.delete': 'ลบแหล่งเงิน', 'project.create': 'เพิ่มโครงการ', 'project.update': 'แก้ไขโครงการ', 'project.delete': 'ลบโครงการ', 'bank.reconcile': 'บันทึกยอดสมุดบัญชี',
   'fiscal_year.create': 'เปิดปีงบประมาณ', 'system.reset': 'ล้างข้อมูลทดลองก่อนใช้งานจริง', 'fiscal_year.close': 'ปิดปีงบประมาณ',
 };
 
@@ -50,7 +50,7 @@ export async function state(db: D1Database, s: Session, now: Date) {
   if (!fy) return { ...base, funds: [], projects: [], banks: [], inc: [], exp: [], led: [], log: [] };
   const all = async (sql: string, p: unknown[] = []) => (await (p.length ? stmt(db, sql, p) : db.prepare(sql)).all<Record<string, any>>()).results;
   const funds = await all(`SELECT id, source_name AS name, color AS c FROM fund_sources WHERE is_active = 1 ORDER BY created_at, id`);
-  const projects = await all(`SELECT id, fund_source_id AS fund, project_name AS name, budget_amount_satang AS bs FROM projects WHERE fiscal_year_id = ?1 ORDER BY project_code`, [fy.id]);
+  const projects = await all(`SELECT id, fund_source_id AS fund, project_name AS name, budget_amount_satang AS bs, department AS dept, owner_name AS owner, period_text AS period FROM projects WHERE fiscal_year_id = ?1 ORDER BY project_code`, [fy.id]);
   const banks = await all(
     `SELECT b.id, b.fund_source_id AS fund, b.account_name AS name,
             (SELECT r.statement_balance_satang FROM bank_reconciliations r WHERE r.bank_account_id = b.id ORDER BY r.created_at DESC, r.id DESC LIMIT 1) AS stmt,
@@ -248,19 +248,70 @@ export async function deleteFund(db: D1Database, s: Session, fid: string, now: D
   return { id: fid, mode: 'archived' };
 }
 
+const opt = (v: unknown, field: string, max: number) => (v === undefined || v === null || String(v).trim() === '' ? '' : text(v, field, 1, max));
+function projectFields(body: Record<string, unknown>) {
+  return {
+    name: text(body.name, 'name', 1, 120),
+    fund: text(body.fundSourceId, 'fund', 1, 60),
+    budget: bahtToSatang(body.budget),
+    dept: opt(body.department, 'department', 80),
+    owner: opt(body.owner, 'owner', 120),
+    period: opt(body.period, 'period', 80),
+  };
+}
+
 export async function addProject(db: D1Database, s: Session, body: Record<string, unknown>, now: Date) {
   requirePerm(s, 'proj');
-  const name = text(body.name, 'name', 1, 120);
-  const fund = text(body.fundSourceId, 'fund', 1, 60);
-  const budget = bahtToSatang(body.budget);
+  const v = projectFields(body);
   const fy = await currentYear(db, now);
   if (!fy || fy.status !== 'open') throw new HttpError(409, 'no_open_fiscal_year');
-  if (await stmt(db, 'SELECT 1 AS x FROM projects WHERE fiscal_year_id = ?1 AND project_name = ?2', [fy.id, name]).first()) throw new HttpError(409, 'duplicate');
+  if (await stmt(db, 'SELECT 1 AS x FROM projects WHERE fiscal_year_id = ?1 AND project_name = ?2', [fy.id, v.name]).first()) throw new HttpError(409, 'duplicate');
   const n = (await stmt(db, 'SELECT COUNT(*) AS n FROM projects WHERE fiscal_year_id = ?1', [fy.id]).first<{ n: number }>())?.n ?? 0;
   const pid = id('p'), t = now.toISOString();
   await db.batch([
-    stmt(db, 'INSERT INTO projects (id, fiscal_year_id, fund_source_id, project_code, project_name, budget_amount_satang, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)', [pid, fy.id, fund, 'P' + String(n + 1).padStart(2, '0') + '-' + pid.slice(2, 6), name, budget, t]),
-    audit(db, s, 'project.create', 'project', pid, t, { name, budget_satang: budget }),
+    stmt(db, 'INSERT INTO projects (id, fiscal_year_id, fund_source_id, project_code, project_name, budget_amount_satang, department, owner_name, period_text, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)', [pid, fy.id, v.fund, 'P' + String(n + 1).padStart(2, '0') + '-' + pid.slice(2, 6), v.name, v.budget, v.dept, v.owner, v.period, t]),
+    audit(db, s, 'project.create', 'project', pid, t, { name: v.name, budget_satang: v.budget, department: v.dept }),
+  ]);
+  return { id: pid };
+}
+
+type ProjRow = { id: string; fy: string; fund: string; name: string; bs: number; status: string; used: number };
+async function projectFor(db: D1Database, pid: string) {
+  const p = await stmt(db, `SELECT p.id, p.fiscal_year_id AS fy, p.fund_source_id AS fund, p.project_name AS name, p.budget_amount_satang AS bs, y.status,
+      (SELECT COUNT(*) FROM expense_transactions e WHERE e.project_id = p.id) AS used
+      FROM projects p JOIN fiscal_years y ON y.id = p.fiscal_year_id WHERE p.id = ?1`, [pid]).first<ProjRow>();
+  if (!p) throw new HttpError(404, 'not_found');
+  if (p.status !== 'open') throw new HttpError(409, 'fiscal_year_closed');
+  return p;
+}
+
+/**
+ * Edits a project in the annual plan. The budget is a plan figure, so it can change at any time.
+ * The fund can change only while no expense request points at the project (expenses must match the project's fund).
+ */
+export async function updateProject(db: D1Database, s: Session, pid: string, body: Record<string, unknown>, now: Date) {
+  requirePerm(s, 'proj');
+  const p = await projectFor(db, pid);
+  const v = projectFields(body);
+  if (v.fund !== p.fund && p.used > 0) throw new HttpError(409, 'project_in_use');
+  if (await stmt(db, 'SELECT 1 AS x FROM projects WHERE fiscal_year_id = ?1 AND project_name = ?2 AND id <> ?3', [p.fy, v.name, pid]).first()) throw new HttpError(409, 'duplicate');
+  const t = now.toISOString();
+  await db.batch([
+    stmt(db, 'UPDATE projects SET project_name = ?2, fund_source_id = ?3, budget_amount_satang = ?4, department = ?5, owner_name = ?6, period_text = ?7 WHERE id = ?1', [pid, v.name, v.fund, v.budget, v.dept, v.owner, v.period]),
+    audit(db, s, 'project.update', 'project', pid, t, { from: { name: p.name, budget_satang: p.bs, fund: p.fund }, to: { name: v.name, budget_satang: v.budget, fund: v.fund, department: v.dept } }),
+  ]);
+  return { id: pid };
+}
+
+/** Removes a project from the plan. Refused once any expense request (in any status) uses it. */
+export async function deleteProject(db: D1Database, s: Session, pid: string, now: Date) {
+  requirePerm(s, 'proj');
+  const p = await projectFor(db, pid);
+  if (p.used > 0) throw new HttpError(409, 'project_in_use');
+  const t = now.toISOString();
+  await db.batch([
+    stmt(db, 'DELETE FROM projects WHERE id = ?1', [pid]),
+    audit(db, s, 'project.delete', 'project', pid, t, { name: p.name, budget_satang: p.bs }),
   ]);
   return { id: pid };
 }

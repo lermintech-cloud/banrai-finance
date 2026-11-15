@@ -211,6 +211,34 @@ test('funds, projects, bank reconciliation', async () => {
   assert.deepEqual(c.raw.prepare('SELECT * FROM v_integrity_issues').all(), []);
 });
 
+test('annual project plan: details, edit, delete only while unused', async () => {
+  const c = fresh();
+  await all(c);
+  const body = { name: 'โครงการห้องสมุดมีชีวิต', fundSourceId: 'f1', budget: '25000', department: 'กลุ่มบริหารวิชาการ', owner: 'นางสาวใจดี มีสุข', period: 'ต.ค. 69 – ก.ย. 70' };
+  const r = await call(c, 'fin', 'POST', '/api/projects', body);
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  let p = (await call(c, 'acc', 'GET', '/api/state')).body.projects.find((x: any) => x.id === r.body.id);
+  assert.deepEqual([p.dept, p.owner, p.period, p.bs], ['กลุ่มบริหารวิชาการ', 'นางสาวใจดี มีสุข', 'ต.ค. 69 – ก.ย. 70', 2500000]);
+  assert.equal((await call(c, 'acc', 'POST', `/api/projects/${r.body.id}/update`, body)).status, 403);
+  const up = await call(c, 'dir', 'POST', `/api/projects/${r.body.id}/update`, { ...body, fundSourceId: 'f3', budget: '30000.50', department: 'กลุ่มบริหารทั่วไป' });
+  assert.equal(up.status, 200, JSON.stringify(up.body));
+  p = (await call(c, 'fin', 'GET', '/api/state')).body.projects.find((x: any) => x.id === r.body.id);
+  assert.deepEqual([p.fund, p.bs, p.dept], ['f3', 3000050, 'กลุ่มบริหารทั่วไป']);
+  assert.equal((await call(c, 'fin', 'POST', `/api/projects/${r.body.id}/update`, { ...body, name: 'โครงการอาหารกลางวัน' })).status, 409);
+  // p1 already has expense requests: budget and details change, the fund does not, and it cannot be deleted
+  const p1 = { name: 'โครงการพัฒนาคุณภาพการเรียนการสอน', budget: '150000', department: 'กลุ่มบริหารวิชาการ' };
+  assert.equal((await call(c, 'fin', 'POST', '/api/projects/p1/update', { ...p1, fundSourceId: 'f1' })).status, 200);
+  const moved = await call(c, 'fin', 'POST', '/api/projects/p1/update', { ...p1, fundSourceId: 'f2' });
+  assert.deepEqual([moved.status, moved.body.error], [409, 'project_in_use']);
+  const del1 = await call(c, 'fin', 'POST', '/api/projects/p1/delete');
+  assert.deepEqual([del1.status, del1.body.error], [409, 'project_in_use']);
+  assert.equal((await call(c, 'fin', 'POST', `/api/projects/${r.body.id}/delete`)).status, 200);
+  assert.equal((await call(c, 'fin', 'POST', `/api/projects/${r.body.id}/delete`)).status, 404);
+  const log = c.raw.prepare("SELECT action FROM audit_logs WHERE action LIKE 'project.%' ORDER BY created_at").all().map((x: any) => x.action);
+  assert.deepEqual(log, ['project.create', 'project.update', 'project.update', 'project.delete']);
+  assert.deepEqual(c.raw.prepare('SELECT * FROM v_integrity_issues').all(), []);
+});
+
 test('funds: edit opening balance and delete only while unused; the administrator acts in every role', async () => {
   const c = fresh();
   await all(c);
