@@ -100,6 +100,24 @@ for label, files in [('0003 rolled back, then 0003b', base + ['0003b_fix_integri
           got == ref and r.execute('select count(*) from v_integrity_issues').fetchone()[0] == 0 and
           fails(r, 'update ledger_entries set amount_satang = 1 where rowid = 1', 'append_only'))
 
+# ---- console reset script: wipes test money and history before go-live, keeps users/settings, restores the guards
+r = fresh(folder='database/console')
+users_before = r.execute('select count(*) from users').fetchone()[0]
+for _ in range(2): r.executescript(read('database/console/reset_test_data.sql'))
+money = [r.execute(f'select count(*) from {t}').fetchone()[0] for t in
+         ('ledger_entries', 'transaction_events', 'bank_reconciliations', 'income_transactions', 'expense_transactions', 'projects', 'bank_accounts', 'fund_sources')]
+got = sorted(r.execute("select type, name from sqlite_master where name not like 'sqlite_%'").fetchall())
+r.execute("insert into fund_sources (id, fund_type_id, source_name, color) values ('fz', (select id from fund_types limit 1), 'จริง', '#0A4FCF')")
+r.execute("insert into ledger_entries (id, fiscal_year_id, fund_source_id, entry_date, amount_satang, kind, description, idempotency_key, created_by) "
+          "values ('lz', (select id from fiscal_years limit 1), 'fz', (select start_date from fiscal_years limit 1), 100, 'opening', 'ยกมา', 'kz', (select id from users limit 1))")
+check('console reset script (run twice): money, projects, funds and history gone; users, settings and schema kept; guards back',
+      money == [0] * 8 and got == ref and
+      r.execute('select count(*) from users').fetchone()[0] == users_before > 0 and
+      r.execute("select count(*) from audit_logs where action = 'system.reset'").fetchone()[0] == 1 and
+      r.execute('select max(last_no) from document_sequences').fetchone()[0] == 0 and
+      fails(r, "delete from ledger_entries", 'append_only') and fails(r, "delete from audit_logs", 'append_only') and
+      r.execute('select count(*) from v_integrity_issues').fetchone()[0] == 0, str(money))
+
 c = fresh(seed=False)
 check('reference roles exist', c.execute('select count(*) from roles').fetchone()[0] == 6)
 cols = [r for t in ('income_transactions', 'expense_transactions', 'ledger_entries', 'projects', 'bank_reconciliations') for r in c.execute(f'pragma table_info({t})')]

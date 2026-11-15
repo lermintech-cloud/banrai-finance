@@ -19,7 +19,7 @@ const ACTION_TH: Record<string, string> = {
   'user.create': 'เพิ่มผู้ใช้', 'user.update': 'แก้ไขบัญชีผู้ใช้', 'user.delete': 'ลบบัญชีผู้ใช้', 'user.enable': 'เปิดใช้บัญชี', 'user.disable': 'ปิดบัญชี', 'user.reset_password': 'ตั้งรหัสผ่านใหม่ให้ผู้ใช้',
   'settings.update': 'แก้ไขตั้งค่าเอกสาร', 'settings.crest': 'เปลี่ยนตราครุฑ', 'settings.crest_delete': 'ลบตราครุฑ',
   'fund.create': 'เพิ่มแหล่งเงิน', 'fund.rename': 'แก้ชื่อแหล่งเงิน', 'fund.opening': 'แก้ยอดยกมา', 'fund.delete': 'ลบแหล่งเงิน', 'project.create': 'เพิ่มโครงการ', 'bank.reconcile': 'บันทึกยอดสมุดบัญชี',
-  'fiscal_year.create': 'เปิดปีงบประมาณ', 'fiscal_year.close': 'ปิดปีงบประมาณ',
+  'fiscal_year.create': 'เปิดปีงบประมาณ', 'system.reset': 'ล้างข้อมูลทดลองก่อนใช้งานจริง', 'fiscal_year.close': 'ปิดปีงบประมาณ',
 };
 
 /** The open fiscal year that contains today, else the latest open one, else the latest. */
