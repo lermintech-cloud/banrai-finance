@@ -102,8 +102,8 @@ B.pn=false;B.on=['sum','proj'];ok(!bookBuild().out.join('').includes('class="pn"
 B.order=['proj','sum'].concat(BK.map(x=>x[0]).filter(k=>k!='proj'&&k!='sum'));bb=bookBuild();ok(bb.out[0].includes('โครงการ')&&bb.secs[0].k=='proj','book: order follows list');
 {const ms=months(),tot=S.funds.reduce((a,f)=>a+bal(f.id),0);ok(ms.length==12&&ms[11].bal==tot,'months: running balance ends at ledger total')}
 {const many=[];for(let i=0;i<70;i++)many.push(['a','b','c']);const pp=rpt('t','s',[['x'],['y'],['z']],many,['','','']);ok(pp.length>=3&&pp.every(x=>(x.match(/<tr>/g)||[]).length<=rowsPer()+2)&&pp[pp.length-1].includes('ลงชื่อ')&&!pp[0].includes('ลงชื่อ'),'report paginates long tables')}
-ok(['dash','all','inc','exp','led','aud','bud','proj','bank','rep','usr','set','doc','book'].every(k=>{S.user='dir';const h=P[k]();return typeof h=='string'&&h.length>200&&!h.includes('undefined')}),'all pages render without undefined');
-ok(NAV.every(g=>g[3].length==3&&g[3].every(k=>P[k]&&PGS[k])),'menu: 4 groups x 3, all wired');
+ok(['dash','all','inc','exp','led','aud','bud','proj','plan','bank','rep','usr','set','doc','book'].every(k=>{S.user='dir';const h=P[k]();return typeof h=='string'&&h.length>200&&!h.includes('undefined')}),'all pages render without undefined');
+ok(NAV.every(g=>g[3].length>=3&&g[3].length<=4&&g[3].every(k=>P[k]&&PGS[k])),'menu: 4 groups of 3-4, all wired');
 
 return out.join('\\n');`;
 const res=new Function(js+test)();const fail=res.split('\n').filter(l=>l.startsWith('FAIL'));console.log(res);console.log('\n'+(res.split('\n').length-fail.length)+' passed, '+fail.length+' failed');setTimeout(()=>process.exit(fail.length?1:0),50);
