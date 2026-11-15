@@ -94,6 +94,8 @@ for label, files in [('0003 rolled back, then 0003b', base + ['0003b_fix_integri
     r = d1(sqlite3.connect(':memory:')); r.execute('PRAGMA foreign_keys = ON')
     for f in files: r.executescript(read('database/console/' + f))
     for _ in range(2): r.executescript(read('database/console/repair_0003_0008.sql'))
+    # migrations after the repaired range are pasted as usual
+    for f in sorted(x for x in os.listdir(os.path.join(ROOT, 'database/console')) if re.match(r'^(\d{4})_', x) and int(x[:4]) >= 9): r.executescript(read('database/console/' + f))
     got = sorted(r.execute("select type, name from sqlite_master where name not like 'sqlite_%'").fetchall())
     r.executescript(read('database/seeds/dev_seed.sql'))
     check('console repair from "' + label + '" (run twice) gives the full schema and a working ledger',

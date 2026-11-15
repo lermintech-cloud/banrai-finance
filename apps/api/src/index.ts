@@ -2,7 +2,7 @@ import { HttpError, errorResponse, json } from './http.ts';
 import { assertSameOrigin, getSession, requirePerm, sessionCookie } from './middleware/auth.ts';
 import { auditLogs, fundSummary, integrityIssues, listTransactions } from './repositories/reports.ts';
 import { SESSION_HOURS, changePassword, login, logout, me } from './services/auth.ts';
-import { addFund, addProject, closeFiscalYear, createFiscalYear, deleteCrest, getCrest, putCrest, reconcile, renameFund, saveSettings, state, updateFund, deleteFund, updateProject, deleteProject } from './services/master.ts';
+import { addFund, addProject, closeFiscalYear, createFiscalYear, deleteCrest, getCrest, putCrest, reconcile, renameFund, saveSettings, state, updateFund, deleteFund, updateProject, deleteProject, addActivity, updateActivity, deleteActivity } from './services/master.ts';
 import { createUser, deleteUser, listUsers, resetPassword, setActive, updateUser } from './services/users.ts';
 import { advance, createTransaction, idempotencyKey, post, reverse } from './services/workflow.ts';
 import type { Env, Kind } from './types.ts';
@@ -126,6 +126,9 @@ async function route(req: Request, env: Env, now: Date): Promise<Response> {
     if (path === '/api/projects') return json(await addProject(env.DB, session, await readJson(req), now), 201);
     if ((m = path.match(new RegExp(`^/api/projects/${ID}/update$`)))) return json(await updateProject(env.DB, session, m[1], await readJson(req), now));
     if ((m = path.match(new RegExp(`^/api/projects/${ID}/delete$`)))) return json(await deleteProject(env.DB, session, m[1], now));
+    if ((m = path.match(new RegExp(`^/api/projects/${ID}/activities$`)))) return json(await addActivity(env.DB, session, m[1], await readJson(req), now), 201);
+    if ((m = path.match(new RegExp(`^/api/activities/${ID}/update$`)))) return json(await updateActivity(env.DB, session, m[1], await readJson(req), now));
+    if ((m = path.match(new RegExp(`^/api/activities/${ID}/delete$`)))) return json(await deleteActivity(env.DB, session, m[1], now));
     if ((m = path.match(new RegExp(`^/api/banks/${ID}/reconcile$`)))) return json(await reconcile(env.DB, session, m[1], await readJson(req), now), 201);
 
     const create = path.match(/^\/api\/(income|expenses)$/);

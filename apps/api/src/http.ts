@@ -33,6 +33,7 @@ export function fromDbError(e: unknown): HttpError {
   if (m.includes('immutable_after_post')) return new HttpError(409, 'immutable_after_post');
   if (m.includes('fiscal_year_closed')) return new HttpError(409, 'fiscal_year_closed');
   if (m.includes('project_fund_mismatch')) return new HttpError(422, 'project_fund_mismatch');
+  if (m.includes('activity_project_mismatch')) return new HttpError(422, 'activity_project_mismatch');
   if (m.includes('ck_exp_sod_') || m.includes('ck_inc_sod_')) return new HttpError(403, 'separation_of_duties');
   if (m.includes('UNIQUE constraint failed')) return new HttpError(409, 'duplicate');
   if (m.includes('FOREIGN KEY constraint failed')) return new HttpError(422, 'invalid_reference');

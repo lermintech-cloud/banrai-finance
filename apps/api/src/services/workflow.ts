@@ -63,7 +63,8 @@ export async function createTransaction(db: D1Database, kind: Kind, s: Session, 
   const description = text(body.description, 'description', 1, 300);
   const method = text(body.paymentMethod, 'payment_method', 1, 40);
   const amount = bahtToSatang(body.amount);
-  const project = kind === 'expense' && body.projectId != null ? text(body.projectId, 'project', 1, 60) : null;
+  const project = kind === 'expense' && body.projectId != null && body.projectId !== '' ? text(body.projectId, 'project', 1, 60) : null;
+  const activity = kind === 'expense' && body.activityId != null && body.activityId !== '' ? text(body.activityId, 'activity', 1, 60) : null;
   const fy = await stmt(db, 'SELECT id FROM fiscal_years WHERE ?1 BETWEEN start_date AND end_date', [date]).first<{ id: string }>();
   if (!fy) throw new HttpError(422, 'no_fiscal_year_for_date');
   const id = newId(kind === 'income' ? 'inc' : 'exp');
@@ -73,8 +74,10 @@ export async function createTransaction(db: D1Database, kind: Kind, s: Session, 
   const vals = kind === 'income' ? '?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10' : '?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11';
   const params: unknown[] = [id, fy.id, fund, date, party, description, amount, method, s.userId, t];
   if (kind === 'expense') params.push(project);
+  // activity_id exists only after migration 0011, so it is written only when an activity was chosen.
+  if (activity) params.push(activity);
   await db.batch([
-    stmt(db, `INSERT INTO ${TABLE[kind]} (${cols}) VALUES (${vals})`, params),
+    stmt(db, `INSERT INTO ${TABLE[kind]} (${cols}${activity ? ', activity_id' : ''}) VALUES (${vals}${activity ? ', ?12' : ''})`, params),
     stmt(db, `INSERT INTO transaction_events (id, entity_type, entity_id, action, from_status, to_status, actor_id, created_at) VALUES (?1, ?2, ?3, 'create', NULL, 'draft', ?4, ?5)`, [newId('ev'), kind, id, s.userId, t]),
     stmt(db, `INSERT INTO audit_logs (id, user_id, action, entity_type, entity_id, new_value, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)`, [newId('aud'), s.userId, `${kind}.create`, kind, id, JSON.stringify({ status: 'draft', amount_satang: amount }), t]),
   ]);

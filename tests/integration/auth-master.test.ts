@@ -239,15 +239,54 @@ test('annual project plan: details, edit, delete only while unused', async () =>
   assert.deepEqual(c.raw.prepare('SELECT * FROM v_integrity_issues').all(), []);
 });
 
+test('project activities: budgets within the project, expenses per activity', async () => {
+  const c = fresh();
+  await all(c);
+  // p1: budget 120,000 (fund f1) and already has expense requests
+  const a1 = await call(c, 'fin', 'POST', '/api/projects/p1/activities', { name: 'อบรมครู', budget: '70000' });
+  assert.equal(a1.status, 201, JSON.stringify(a1.body));
+  assert.equal((await call(c, 'acc', 'POST', '/api/projects/p1/activities', { name: 'x', budget: '1' })).status, 403);
+  const over = await call(c, 'fin', 'POST', '/api/projects/p1/activities', { name: 'ซื้อสื่อ', budget: '50000.01' });
+  assert.deepEqual([over.status, over.body.error], [409, 'activity_over_budget']);
+  const a2 = await call(c, 'fin', 'POST', '/api/projects/p1/activities', { name: 'ซื้อสื่อ', budget: '50000' });
+  assert.equal(a2.status, 201);
+  assert.equal((await call(c, 'fin', 'POST', '/api/projects/p1/activities', { name: 'ซื้อสื่อ', budget: '0' })).status, 409);
+  // project budget cannot drop below its activities
+  const shrink = await call(c, 'fin', 'POST', '/api/projects/p1/update', { name: 'โครงการพัฒนาคุณภาพการเรียนการสอน', fundSourceId: 'f1', budget: '100000' });
+  assert.deepEqual([shrink.status, shrink.body.error], [409, 'activity_over_budget']);
+  assert.equal((await call(c, 'fin', 'POST', `/api/activities/${a2.body.id}/update`, { name: 'ซื้อสื่อการสอน', budget: '30000' })).status, 200);
+  // expense names an activity of its own project only
+  const e = { fundSourceId: 'f1', transactionDate: '2026-11-13', partyName: 'วิทยากร', description: 'ค่าตอบแทนวิทยากร', paymentMethod: 'โอน', amount: '3000.00', projectId: 'p1' };
+  const ok = await call(c, 'fin', 'POST', '/api/expenses', { ...e, activityId: a1.body.id });
+  assert.equal(ok.status, 201, JSON.stringify(ok.body));
+  const bad = await call(c, 'fin', 'POST', '/api/expenses', { ...e, projectId: null, activityId: a1.body.id });
+  assert.deepEqual([bad.status, bad.body.error], [422, 'activity_project_mismatch']);
+  const st = (await call(c, 'acc', 'GET', '/api/state')).body;
+  assert.deepEqual(st.acts.filter((x: any) => x.proj === 'p1').map((x: any) => [x.name, x.bs]), [['อบรมครู', 7000000], ['ซื้อสื่อการสอน', 3000000]]);
+  assert.equal(st.exp.find((x: any) => x.id === ok.body.id).act, a1.body.id);
+  // in use → cannot delete; unused → can
+  assert.equal((await call(c, 'fin', 'POST', `/api/activities/${a1.body.id}/delete`)).body.error, 'activity_in_use');
+  assert.equal((await call(c, 'fin', 'POST', `/api/activities/${a2.body.id}/delete`)).status, 200);
+  // a new project with activities but no expenses deletes cleanly with its activities
+  const np = await call(c, 'fin', 'POST', '/api/projects', { name: 'โครงการทดลอง', fundSourceId: 'f3', budget: '1000' });
+  await call(c, 'fin', 'POST', `/api/projects/${np.body.id}/activities`, { name: 'กิจกรรม 1', budget: '1000' });
+  assert.equal((await call(c, 'fin', 'POST', `/api/projects/${np.body.id}/delete`)).status, 200);
+  assert.equal(c.raw.prepare('SELECT COUNT(*) n FROM project_activities WHERE project_id = ?1').get(np.body.id)!.n, 0);
+  assert.deepEqual(c.raw.prepare('SELECT * FROM v_integrity_issues').all(), []);
+});
+
 test('before migration 0010 is applied everyone can still sign in and load data', async () => {
   const c = fresh();
   await all(c);
+  c.raw.exec('DROP TRIGGER trg_expense_activity_ins; DROP TRIGGER trg_expense_activity_upd; ALTER TABLE expense_transactions DROP COLUMN activity_id; DROP TABLE project_activities');
   for (const col of ['department', 'owner_name', 'period_text']) c.raw.exec(`ALTER TABLE projects DROP COLUMN ${col}`);
   const st = await call(c, 'fin', 'GET', '/api/state');
   assert.equal(st.status, 200, JSON.stringify(st.body));
   assert.ok(st.body.projects.length > 0);
   const r = await call(c, 'fin', 'POST', '/api/projects', { name: 'ใหม่', fundSourceId: 'f1', budget: '100' });
   assert.deepEqual([r.status, r.body.error], [409, 'migration_required']);
+  assert.equal((await call(c, 'fin', 'POST', '/api/expenses', { fundSourceId: 'f1', transactionDate: '2026-11-13', partyName: 'ก', description: 'ข', paymentMethod: 'โอน', amount: '10', projectId: 'p1' })).status, 201);
+  assert.deepEqual(st.body.acts, []);
 });
 
 test('funds: edit opening balance and delete only while unused; the administrator acts in every role', async () => {

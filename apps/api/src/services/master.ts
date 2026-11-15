@@ -18,7 +18,7 @@ const ACTION_TH: Record<string, string> = {
   'auth.login': 'เข้าสู่ระบบ', 'auth.logout': 'ออกจากระบบ', 'auth.login_failed': 'เข้าสู่ระบบไม่สำเร็จ', 'auth.locked': 'บัญชีถูกล็อกชั่วคราว', 'auth.password_changed': 'เปลี่ยนรหัสผ่าน',
   'user.create': 'เพิ่มผู้ใช้', 'user.update': 'แก้ไขบัญชีผู้ใช้', 'user.delete': 'ลบบัญชีผู้ใช้', 'user.enable': 'เปิดใช้บัญชี', 'user.disable': 'ปิดบัญชี', 'user.reset_password': 'ตั้งรหัสผ่านใหม่ให้ผู้ใช้',
   'settings.update': 'แก้ไขตั้งค่าเอกสาร', 'settings.crest': 'เปลี่ยนตราครุฑ', 'settings.crest_delete': 'ลบตราครุฑ',
-  'fund.create': 'เพิ่มแหล่งเงิน', 'fund.rename': 'แก้ชื่อแหล่งเงิน', 'fund.opening': 'แก้ยอดยกมา', 'fund.delete': 'ลบแหล่งเงิน', 'project.create': 'เพิ่มโครงการ', 'project.update': 'แก้ไขโครงการ', 'project.delete': 'ลบโครงการ', 'bank.reconcile': 'บันทึกยอดสมุดบัญชี',
+  'fund.create': 'เพิ่มแหล่งเงิน', 'fund.rename': 'แก้ชื่อแหล่งเงิน', 'fund.opening': 'แก้ยอดยกมา', 'fund.delete': 'ลบแหล่งเงิน', 'project.create': 'เพิ่มโครงการ', 'project.update': 'แก้ไขโครงการ', 'project.delete': 'ลบโครงการ', 'activity.create': 'เพิ่มกิจกรรม', 'activity.update': 'แก้ไขกิจกรรม', 'activity.delete': 'ลบกิจกรรม', 'bank.reconcile': 'บันทึกยอดสมุดบัญชี',
   'fiscal_year.create': 'เปิดปีงบประมาณ', 'system.reset': 'ล้างข้อมูลทดลองก่อนใช้งานจริง', 'fiscal_year.close': 'ปิดปีงบประมาณ',
 };
 
@@ -47,7 +47,7 @@ export async function state(db: D1Database, s: Session, now: Date) {
         sg: Object.fromEntries(SIGNERS.map((k) => { const r = sg.find((x) => x.role_key === k); return [k, { n: r?.full_name ?? '', p: r?.position ?? '' }]; })) }
     : null;
   const base = { me: me(s), fy: fy ? { id: fy.id, be: fy.year_be, s: fy.start_date, e: fy.end_date, status: fy.status } : null, cfg, hasSettings: !!st };
-  if (!fy) return { ...base, funds: [], projects: [], banks: [], inc: [], exp: [], led: [], log: [] };
+  if (!fy) return { ...base, funds: [], projects: [], acts: [], banks: [], inc: [], exp: [], led: [], log: [] };
   const all = async (sql: string, p: unknown[] = []) => (await (p.length ? stmt(db, sql, p) : db.prepare(sql)).all<Record<string, any>>()).results;
   const funds = await all(`SELECT id, source_name AS name, color AS c FROM fund_sources WHERE is_active = 1 ORDER BY created_at, id`);
   // Plan columns come from migration 0010. Until it is applied, still load everything (without plan details)
@@ -63,9 +63,11 @@ export async function state(db: D1Database, s: Session, now: Date) {
   const inc = await all(
     `SELECT id, fund_source_id AS fund, transaction_date AS date, payer_name AS party, description AS "desc", amount_satang AS amt, payment_method AS method, status, created_by AS "by", receipt_number AS no
        FROM income_transactions WHERE fiscal_year_id = ?1 AND status <> 'cancelled' ORDER BY transaction_date DESC, id DESC LIMIT 3000`, [fy.id]);
-  const exp = await all(
-    `SELECT id, fund_source_id AS fund, transaction_date AS date, payee_name AS party, description AS "desc", amount_satang AS amt, payment_method AS method, COALESCE(project_id, '') AS proj, status, created_by AS "by", voucher_number AS no
-       FROM expense_transactions WHERE fiscal_year_id = ?1 AND status <> 'cancelled' ORDER BY transaction_date DESC, id DESC LIMIT 3000`, [fy.id]);
+  const expSql = (act: string) => `SELECT id, fund_source_id AS fund, transaction_date AS date, payee_name AS party, description AS "desc", amount_satang AS amt, payment_method AS method, COALESCE(project_id, '') AS proj,${act} status, created_by AS "by", voucher_number AS no
+       FROM expense_transactions WHERE fiscal_year_id = ?1 AND status <> 'cancelled' ORDER BY transaction_date DESC, id DESC LIMIT 3000`;
+  // activity_id and project_activities come from migration 0011; without it everything else still loads.
+  const exp = await all(expSql(" COALESCE(activity_id, '') AS act,"), [fy.id]).catch(() => all(expSql(''), [fy.id]));
+  const acts = await all(`SELECT a.id, a.project_id AS proj, a.activity_name AS name, a.budget_amount_satang AS bs FROM project_activities a JOIN projects p ON p.id = a.project_id WHERE p.fiscal_year_id = ?1 ORDER BY a.created_at, a.id`, [fy.id]).catch(() => []);
   const bf = await all(`SELECT fund_source_id AS fund, SUM(amount_satang) AS amt FROM ledger_entries WHERE entry_date < ?1 AND fund_source_id IN (SELECT id FROM fund_sources WHERE is_active = 1) GROUP BY fund_source_id HAVING SUM(amount_satang) <> 0`, [fy.start_date]);
   const cur = await all(
     `SELECT id, entry_date AS date, fund_source_id AS fund, amount_satang AS amt, COALESCE(ref_no, '') AS ref, description AS "desc",
@@ -82,7 +84,7 @@ export async function state(db: D1Database, s: Session, now: Date) {
           ORDER BY a.created_at DESC, a.id DESC LIMIT 300`,
       )).map((l) => ({ ...l, a: ACTION_TH[l.a] ?? l.a, why: l.why ?? '', ref: l.ref ?? '' }))
     : [];
-  return { ...base, funds, projects, banks, inc, exp, led, log };
+  return { ...base, funds, projects, acts, banks, inc, exp, led, log };
 }
 
 export async function saveSettings(db: D1Database, s: Session, body: Record<string, unknown>, now: Date) {
@@ -304,6 +306,7 @@ export async function updateProject(db: D1Database, s: Session, pid: string, bod
   const v = projectFields(body);
   await needPlanColumns(db);
   if (v.fund !== p.fund && p.used > 0) throw new HttpError(409, 'project_in_use');
+  if (v.budget < (await activityTotal(db, pid))) throw new HttpError(409, 'activity_over_budget');
   if (await stmt(db, 'SELECT 1 AS x FROM projects WHERE fiscal_year_id = ?1 AND project_name = ?2 AND id <> ?3', [p.fy, v.name, pid]).first()) throw new HttpError(409, 'duplicate');
   const t = now.toISOString();
   await db.batch([
@@ -324,6 +327,70 @@ export async function deleteProject(db: D1Database, s: Session, pid: string, now
     audit(db, s, 'project.delete', 'project', pid, t, { name: p.name, budget_satang: p.bs }),
   ]);
   return { id: pid };
+}
+
+/** Sum of activity budgets in a project (0 before migration 0011). */
+async function activityTotal(db: D1Database, pid: string, except = '') {
+  try {
+    return (await stmt(db, 'SELECT COALESCE(SUM(budget_amount_satang), 0) AS n FROM project_activities WHERE project_id = ?1 AND id <> ?2', [pid, except]).first<{ n: number }>())?.n ?? 0;
+  } catch { return 0; }
+}
+async function needActivities(db: D1Database) {
+  const r = await db.prepare(`SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name = 'project_activities'`).first<{ n: number }>();
+  if (!r?.n) throw new HttpError(409, 'migration_required');
+}
+function activityFields(body: Record<string, unknown>) {
+  return { name: text(body.name, 'name', 1, 160), budget: bahtToSatangOrZero(body.budget) };
+}
+
+/** Adds an activity under a project. Activity budgets together may not exceed the project budget. */
+export async function addActivity(db: D1Database, s: Session, pid: string, body: Record<string, unknown>, now: Date) {
+  requirePerm(s, 'proj');
+  await needActivities(db);
+  const p = await projectFor(db, pid);
+  const v = activityFields(body);
+  if ((await activityTotal(db, pid)) + v.budget > p.bs) throw new HttpError(409, 'activity_over_budget');
+  const aid = id('a'), t = now.toISOString();
+  await db.batch([
+    stmt(db, 'INSERT INTO project_activities (id, project_id, activity_name, budget_amount_satang, created_at) VALUES (?1, ?2, ?3, ?4, ?5)', [aid, pid, v.name, v.budget, t]),
+    audit(db, s, 'activity.create', 'project', pid, t, { activity: aid, name: v.name, budget_satang: v.budget }),
+  ]);
+  return { id: aid };
+}
+
+async function activityFor(db: D1Database, aid: string) {
+  await needActivities(db);
+  const a = await stmt(db, `SELECT a.id, a.project_id AS pid, a.activity_name AS name, a.budget_amount_satang AS bs,
+      (SELECT COUNT(*) FROM expense_transactions e WHERE e.activity_id = a.id) AS used FROM project_activities a WHERE a.id = ?1`, [aid])
+    .first<{ id: string; pid: string; name: string; bs: number; used: number }>();
+  if (!a) throw new HttpError(404, 'not_found');
+  return { a, p: await projectFor(db, a.pid) };
+}
+
+export async function updateActivity(db: D1Database, s: Session, aid: string, body: Record<string, unknown>, now: Date) {
+  requirePerm(s, 'proj');
+  const { a, p } = await activityFor(db, aid);
+  const v = activityFields(body);
+  if ((await activityTotal(db, p.id, aid)) + v.budget > p.bs) throw new HttpError(409, 'activity_over_budget');
+  const t = now.toISOString();
+  await db.batch([
+    stmt(db, 'UPDATE project_activities SET activity_name = ?2, budget_amount_satang = ?3 WHERE id = ?1', [aid, v.name, v.budget]),
+    audit(db, s, 'activity.update', 'project', p.id, t, { activity: aid, from: { name: a.name, budget_satang: a.bs }, to: { name: v.name, budget_satang: v.budget } }),
+  ]);
+  return { id: aid };
+}
+
+/** Removes an activity. Refused once any expense request names it. */
+export async function deleteActivity(db: D1Database, s: Session, aid: string, now: Date) {
+  requirePerm(s, 'proj');
+  const { a, p } = await activityFor(db, aid);
+  if (a.used > 0) throw new HttpError(409, 'activity_in_use');
+  const t = now.toISOString();
+  await db.batch([
+    stmt(db, 'DELETE FROM project_activities WHERE id = ?1', [aid]),
+    audit(db, s, 'activity.delete', 'project', p.id, t, { activity: aid, name: a.name, budget_satang: a.bs }),
+  ]);
+  return { id: aid };
 }
 
 /** Records what the bank book says. The ledger is never adjusted automatically. */

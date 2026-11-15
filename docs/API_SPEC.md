@@ -42,7 +42,12 @@ Worker: `apps/api/src/index.ts` ทุกเส้นทางใต้ `/api/` 
 | POST | `/api/funds/:id/delete` | `setup` | ลบแหล่งเงินที่ยังไม่มีรายการ: ไม่มีแถวในทะเบียนคุมเลย → ลบจริง (`mode: deleted`); มีแค่ยอดยกมา → ปรับยอดเป็นศูนย์แล้วซ่อน (`mode: archived`); ใช้แล้ว → 409 `fund_in_use` |
 | POST | `/api/projects` | `proj` | `{name,fundSourceId,budget,department?,owner?,period?}` |
 | POST | `/api/projects/:id/update` | `proj` | same body; fund change → 409 `project_in_use` once any expense uses the project |
-| POST | `/api/projects/:id/delete` | `proj` | 409 `project_in_use` once any expense uses the project |
+| POST | `/api/projects/:id/delete` | `proj` | 409 `project_in_use` once any expense uses the project; its activities go with it |
+| POST | `/api/projects/:id/activities` | `proj` | `{name,budget}`; 409 `activity_over_budget` when activity budgets would exceed the project budget |
+| POST | `/api/activities/:id/update` | `proj` | `{name,budget}`; same budget rule |
+| POST | `/api/activities/:id/delete` | `proj` | 409 `activity_in_use` once an expense names it |
+
+`POST /api/expenses` accepts `activityId` (optional): it must belong to `projectId`, else 422 `activity_project_mismatch`. `/api/state` returns `acts` and each expense's `act`. Lowering a project budget below its activities → 409 `activity_over_budget`.
 | POST | `/api/banks/:id/reconcile` | `review` | `{amount}` บันทึกยอดตามสมุดบัญชี (ไม่ปรับทะเบียนคุมเอง) |
 
 ยอดของปีก่อนหน้าปีงบปัจจุบันถูกรวมเป็นแถว "ยอดยกมาจากปีก่อน" ต่อแหล่งเงินใน `/api/state`
