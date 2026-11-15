@@ -238,7 +238,17 @@ dialog .dsub{color:var(--mut);font-size:13px;margin:4px 0 0}
 .tpl b{display:block;font-size:14px;line-height:1.35}
 .tpl small{display:block;color:var(--mut);font-size:12px;line-height:1.45;margin-top:2px}
 .tpl em{display:inline-block;font-style:normal;font-size:10.5px;color:var(--warn);background:var(--warnbg);border-radius:99px;padding:0 7px;margin-top:5px}
-.docwrap{display:grid;grid-template-columns:340px minmax(0,1fr);gap:16px;align-items:start;margin-top:16px}
+.docwrap{display:grid;grid-template-columns:minmax(300px,360px) minmax(0,1fr);gap:20px;align-items:start;margin-top:16px}
+.tpick{margin-top:14px;padding:4px 18px}
+.tprow{display:grid;grid-template-columns:128px minmax(0,1fr);gap:14px;align-items:center;padding:12px 0;border-top:1px solid var(--line)}
+.tprow:first-child{border-top:0}
+.tpg{font-size:13px;font-weight:600;color:var(--mut);line-height:1.4}
+.tpcs{display:flex;flex-wrap:wrap;gap:8px}
+.tpc{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:6px 14px 6px 10px;border:1px solid var(--line);border-radius:10px;background:var(--card);cursor:pointer;font-size:14px;line-height:1.3;text-align:left;color:var(--ink)}
+.tpc svg{width:17px;height:22px;color:var(--mut);flex:none}
+.tpc:hover{border-color:var(--gold)}
+.tpc.on{border-color:var(--gold);background:var(--goldbg);box-shadow:0 0 0 2px color-mix(in srgb,var(--gold) 35%,transparent);font-weight:600}
+.tpc.on svg{color:var(--gold)}
 .ctl{position:sticky;top:12px}
 .ctl label:first-child{margin-top:0}
 .deskw{background:color-mix(in srgb,var(--ink) 10%,var(--bg));border:1px solid var(--line);border-radius:var(--r);padding:16px;min-width:0}
@@ -307,6 +317,7 @@ body.auth{display:block}body.auth aside,body.auth #tabs{display:none}
 /* responsive */
 @media(max-width:1180px){.menu{grid-template-columns:repeat(2,minmax(0,1fr))}.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:980px){.two,.half2{grid-template-columns:minmax(0,1fr)}.docwrap{grid-template-columns:minmax(0,1fr)}.ctl{position:static}}
+@media(max-width:700px){.tprow{grid-template-columns:minmax(0,1fr);gap:8px}.tpick{padding:4px 14px}.tpcs{flex-wrap:nowrap;overflow-x:auto;margin:0 -14px;padding:2px 14px 6px;scroll-snap-type:x proximity;-webkit-overflow-scrolling:touch}.tpc{flex:none;font-size:13.5px;scroll-snap-align:start;white-space:nowrap}}
 @media(max-width:860px){
  body{display:block;padding-bottom:calc(64px + env(safe-area-inset-bottom,0px))}
  aside{display:none}
@@ -914,7 +925,7 @@ const docTabs=p=>`<div class="tabs2"><a href="#doc" class="${p=='doc'?'on':''}">
 P.doc=function(){dsync();const L=ditems(),t=TP(D.type),k=t[4],mm=D.type=='mm'||D.type=='mmr',G=[...new Set(TPL.map(x=>x[3]))];
  const fld=(l,key,ty,v,h)=>`${L2(l,h)}<input value="${esc(v??D[key])}" oninput="dset('${key}',this.value)"${ty?' type="'+ty+'"':''}>`;
  return hd('เอกสาร','','เลือกแบบเอกสาร กรอกเฉพาะข้อมูลของฉบับนั้น ดูตัวอย่าง แล้วพิมพ์')+docTabs('doc')+info('แบบเอกสารทุกแบบเป็นต้นแบบ ยังไม่ได้รับรองว่าตรงตามระเบียบ ให้เทียบกับแบบของหน่วยงานก่อนใช้จริง')
- +G.map(g=>`<div class="sect" style="margin-top:14px"><h2 style="font-size:15px">${g}</h2></div><div class="tplg">${TPL.filter(x=>x[3]==g).map(x=>`<button class="tpl${x[0]==D.type?' on':''}" onclick="dtype('${x[0]}')" aria-pressed="${x[0]==D.type}">${ART.doc(x[0])}<span><b>${x[1]}</b><small>${x[2]}</small><em>ต้นแบบ รอตรวจ</em></span></button>`).join('')}</div>`).join('')
+ +`<div class="card tpick" role="group" aria-label="แบบเอกสาร">${G.map(g=>`<div class="tprow"><span class="tpg">${g}</span><div class="tpcs">${TPL.filter(x=>x[3]==g).map(x=>`<button class="tpc${x[0]==D.type?' on':''}" onclick="dtype('${x[0]}')" aria-pressed="${x[0]==D.type}" title="${esc(x[2])}">${ART.doc(x[0])}<span>${x[1]}</span></button>`).join('')}</div></div>`).join('')}</div>`
  +`<div class="docwrap"><div class="card ctl"><h2>${t[1]}</h2><p class="hint">${t[2]}</p>${k=='item'?L2('รายการ','เลือกรายการที่จะออกเอกสาร')+`<select onchange="dsel(this.value)">${L.length?L.map(i=>`<option value="${i.id}"${i.id==D.id?' selected':''}>${esc((i.no||'ยังไม่ออกเลข')+' · '+i.desc)}</option>`).join(''):'<option>ไม่มีรายการ</option>'}</select>`:''}${k=='month'?L2('เดือน','เดือนที่รายงาน')+monthSel(dM(),"D.month=this.value;D.id=null;render()"):''}${k=='fund'?L2('แหล่งเงิน','พิมพ์ทะเบียนคุมของแหล่งเงินใด')+`<select onchange="D.fund=this.value;drawSheet()">${S.funds.map(f=>`<option value="${f.id}"${f.id==dF()?' selected':''}>${esc(f.name)}</option>`).join('')}</select>`:''}${k=='date'?fld('วันที่','date','date',D.date,'รายงานยอด ณ วันนี้'):''}${mm?fld('ที่','no','',D.no,'เลขที่หนังสือ เว้นว่างได้')+fld('เรื่อง','subj')+fld('เรียน','to','',D.to??CF().to)+fld('วันที่','date','date'):''}${mm||['rc','pv','cert'].includes(D.type)?L2(mm?'ข้อความ':'หมายเหตุ (ถ้ามี)',mm?'ขึ้นย่อหน้าใหม่ด้วย Enter':'จะพิมพ์ไว้ท้ายเอกสาร')+`<textarea rows="${mm?7:3}" oninput="dset('body',this.value)">${esc(D.body)}</textarea>`:''}<div class="sep">ผู้ลงนาม${Q('ชื่อและตำแหน่งผู้ลงนามตั้งไว้ที่เมนู ตั้งค่า เพื่อไม่ต้องพิมพ์ซ้ำทุกฉบับ')}</div>${dsgs()}<a class="lnk" href="#set">แก้ไขในเมนู ตั้งค่า</a>${printBox()}</div><div class="deskw"><div id="dpv"><div id="dprev"></div></div></div></div>`};
 function openDoc(t,id){D.type=t=='inc'?'rc':'pv';D.sel=id;D.id=null;D.body='';go('doc')}
 
